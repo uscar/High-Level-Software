@@ -1,0 +1,17 @@
+﻿Build started 9/15/2015 9:01:41 PM.
+     1>Project "C:\Users\Matt\Documents\GitHub\Monte-Carlo-Prob-est\Win32Project1\Win32Project1\Win32Project1.vcxproj" on node 2 (Build target(s)).
+     1>ClCompile:
+         C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\CL.exe /c /ZI /nologo /W3 /WX- /sdl /Od /Oy- /D WIN32 /D _DEBUG /D _WINDOWS /D _UNICODE /D UNICODE /Gm /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Yu"stdafx.h" /Fp"Debug\Win32Project1.pch" /Fo"Debug\\" /Fd"Debug\vc120.pdb" /Gd /TP /analyze- /errorReport:prompt Win32Project1.cpp
+         Win32Project1.cpp
+     1>c:\users\matt\documents\github\monte-carlo-prob-est\win32project1\win32project1\montecarlo_library.h(131): error C2079: 'trial::quad' uses undefined class 'aerial_action'
+     1>c:\users\matt\documents\github\monte-carlo-prob-est\win32project1\win32project1\montecarlo_library.h(201): error C2228: left of '.simpleTimeEst' must have class/struct/union
+                 type is 'int'
+     1>c:\users\matt\documents\github\monte-carlo-prob-est\win32project1\win32project1\montecarlo_library.h(239): warning C4244: '=' : conversion from 'double' to 'int', possible loss of data
+     1>c:\users\matt\documents\github\monte-carlo-prob-est\win32project1\win32project1\montecarlo_library.h(379): warning C4244: 'argument' : conversion from 'double' to 'int', possible loss of data
+     1>c:\users\matt\documents\github\monte-carlo-prob-est\win32project1\win32project1\montecarlo_library.h(605): warning C4244: 'argument' : conversion from 'double' to 'int', possible loss of data
+     1>c:\users\matt\documents\github\monte-carlo-prob-est\win32project1\win32project1\win32project1.cpp(169): warning C4244: 'argument' : conversion from 'time_t' to 'unsigned int', possible loss of data
+     1>Done Building Project "C:\Users\Matt\Documents\GitHub\Monte-Carlo-Prob-est\Win32Project1\Win32Project1\Win32Project1.vcxproj" (Build target(s)) -- FAILED.
+
+Build FAILED.
+
+Time Elapsed 00:00:00.90

@@ -22,6 +22,8 @@
 
 //TO RE-ADD DRAWING: change evaluatetime implementation to evaluate at intervals of like 15 msec and then print out every time you do that
 
+//need to pass out collision certificates to aerial bot too
+
 using namespace std;
 
 class simulation;
@@ -91,12 +93,15 @@ double distance(pair<double, double> & a, pair<double, double> & b) {
 	return sqrt((a.first - b.first)*(a.first - b.first) + (a.second - b.second)*(a.second - b.second));
 }
 
-struct pqueue_index {
+struct pqueue_index { //a notification
 	roomba_action * caller; //who we'll notify
 	roomba_action * linked; //the possible roomba that 
 	notification type;
 	double at_time;
-	pqueue_index(roomba_action * call, roomba_action * link, notification ty, double t) : caller(call), linked(link), type(ty), at_time(t) {}
+	//bool quad_notify;
+	pqueue_index(roomba_action * call, roomba_action * link, notification ty, double t) : caller(call), linked(link), type(ty), at_time(t) {
+		//quad_notify = false;
+	}
 	/*bool operator<(const pqueue_index & a) {
 		return at_time < a.at_time;
 	}*/
@@ -186,6 +191,7 @@ public:
 	quad_action * child;
 	trial * c_test;
 	simulation * c_sim;
+	roomba_action * tracking;
 	//void append();
 	quad_state_type mytype;
 	bool executeAction(actionval & a,double time,double until);
@@ -195,20 +201,43 @@ public:
 	~quad_action();
 };
 
-bool quad_action::flyTo(int roomba, double time, double until) {
+roomba_action fetchInterceptState(roomba_action * targ,quad_action * copter,double cap) { //can quad reach this roomba state within time bounds? If not, is there too much time or too little.
+	double dist_to, coverable;
+	do {
+		dist_to = distance(cstate->startpos, copter->startpos);
+		coverable = quadSpeedEst * (cap - copter->beginTime);
+		if (dist_to >= coverable) {
+			return targ->child; //return state we're going to run into. could be nullptr
+		}
+		cap = targ->start_time;
+		targ = targ->parent;
+	} while (dist_to < coverable)
+}
+
+bool quad_action::flyTo(int roomba, double until) { //cut time before calculation done
 	double beginTime = c_test->currquadtime;
 	double workingTime = beginTime;
-	while (workingTime < c_test->currtime) {
-		if (workingTime >= until) {
-			return false; 
+	roomba_action * cstate = c_test->currbots[roomba];
+	double cap = min(c_test->currtime, until);//upper time bound
+	cstate = fetchIntceptState(cstate, this, cap);
+	while (cstate == nullptr) {
+		if (c_test->currtime >= until) { //if we've exceeded the max allotted time
+			return false; //cannot be flown to
 		}
-		//we're starting at frontmost state
-		roomba_action * cstate = c_test->currbots[roomba];
-		while ((quadSpeedEst * (cstate->start_time - beginTime)) > distance(cstate->getposition(cstate->start_time),getposition(beginTime))) { //if we can easily get there
-			cstate = cstate->child; //go back one
+		else {
+			c_test->evaluatetime(min(c_test->currtime+1, until)); //extends prediction up to 1 second into the future, replace this with something more elegant later
 		}
-
 	}
+	double dist_to, coverable;
+	dist_to = distance(cstate->startpos, copter->startpos);
+	coverable = quadSpeedEst * (cap - copter->beginTime);
+	workingTime = (cstate->start_time - cstate->end_time) / 2;
+	while () {
+		
+	}
+	//figure out intercept time
+	//while (workingTime < cap) { //once we've gotten all that sorted out and figured out what our appropriate state is
+	//}
 }
 
 double quad_action::simpleTimeEst(actionval & a, double time) {
@@ -441,7 +470,7 @@ void trial::evaluatetime(double until) {
 	}
 }
 
-void trial::show(double until,HDC hdc, RECT * prc) { //use this method to show things. 
+void trial::show(double until,HDC hdc, RECT * prc) { //use this method to show things on the sketchy renderer.
 	double interval = 30 / 1000;
 	while (currtime < until) {
 		evaluatetime(until + interval);
@@ -476,7 +505,7 @@ void trial::show(double until,HDC hdc, RECT * prc) { //use this method to show t
 	}
 }
 
-double simp_dform(pair<double, double> a, pair<double, double> b) {
+double simp_dform(pair<double, double> a, pair<double, double> b) { //simple distance
 	return pow((a.first - b.first), 2) + pow((a.second - b.second), 2);
 }
 
