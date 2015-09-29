@@ -168,7 +168,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		DeleteDC(hdcMem);*/
 		srand(time(0));
 		//trial tr = trial(nullptr);
-		tr.evaluatetime(600);
+		tr.show(600,hdc,&prc);
 		EndPaint(hWnd, &ps);
 		break;
 	case WM_DESTROY:

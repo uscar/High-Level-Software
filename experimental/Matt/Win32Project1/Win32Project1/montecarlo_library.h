@@ -54,6 +54,12 @@ double topTouchTime = reverseLength / 4;
 double beginTopTouch = 0;
 
 double quadSpeedEst = 3.0; //m/s
+double quadvSpeedEst = 1;
+double quadvSpeedEstInteracting = -quadSpeedEst / 3;
+
+double roombaTapHeight = 0.05;
+double roombaBumpHeight = 0.0;
+double cruiseHeight = 1.0;
 
 double wheelbase_width = 0.25798379655423864; //worked backwards to this
 
@@ -68,11 +74,17 @@ int newton_iterations = 3;
 double topTouchTimereq = 100;
 double bumperTimereq = 100;
 
+double FOV; //we need this value to find the vield of view as a function of height
+
+int branching = 5;
 
 
-enum notification { TOUCHED, REVERSAL, NOISE, MAGNET, ENDED,TOUCHENDED};
-enum state_type { REVERSE, RUN, RANDROT, TOPTOUCH, STOPPED,OBSTACLERUN,OBSTACLESTOPPED,TOTALSTOP};
-enum quad_state_type {BUMP, FLY, TAP, ASCEND, STOPPED,FLYTHROUGH};
+
+enum notification { TOUCHED, REVERSAL, NOISE, MAGNET, ENDED,TOUCHENDED,EXITED};
+enum state_type { REVERSE, RUN, RANDROT, TOPTOUCH, STOPPED,OBSTACLERUN,OBSTACLESTOPPED,TOTALSTOP,OUTOFPLAY};
+enum quad_state_type {BUMP, FLY, TAP, ASCEND, HOVER,FLYTHROUGH,ABORT};
+enum quad_notification { ROOMBASPOTTED};
+
 
 struct trial;
 class roomba_action;
@@ -89,8 +101,73 @@ double fix_angle(double in_angle) {
 	return in_angle;
 }
 
-double distance(pair<double, double> & a, pair<double, double> & b) {
+struct vec2d { //phase out pair<double,double>s in favor of this
+	double first;
+	double second;
+	pair<double, double> getPaired();
+	vec2d(double, double);
+	vec2d(pair<double, double>);
+	void swap();
+	double getMagnitude();
+};
+
+void vec2d::swap() {
+	double t = first;
+	first = second;
+	second = t;
+}
+
+double vec2d::getMagnitude() {
+	return sqrt(first*first + second*second);
+}
+
+pair<double,double> vec2d::getPaired() {
+	return make_pair(first, second);
+}
+
+vec2d::vec2d(double a, double b) {
+	first = a;
+	second = b;
+}
+
+vec2d::vec2d(pair<double,double> a) {
+	first = a.first;
+	second = a.second;
+}
+
+vec2d operator* (double a, const vec2d& b) {
+	return vec2d(a*b.first,a*b.second);
+}
+
+vec2d operator* (const vec2d& a, double b) {
+	return vec2d(a.first*b, a.second*b);
+}
+
+vec2d operator+(const vec2d & a,const vec2d & b) {
+	return vec2d(a.first + b.first, a.second + b.second);
+}
+vec2d operator-(const vec2d & a,const vec2d & b) {
+	return vec2d(a.first - b.first, a.second - b.second);
+}
+
+double dist(pair<double, double> & a, pair<double, double> & b) {
 	return sqrt((a.first - b.first)*(a.first - b.first) + (a.second - b.second)*(a.second - b.second));
+}
+
+pair<double, double> vec_subtract(pair<double, double> a, pair<double, double> b) {
+	return make_pair(a.first - b.first, a.second - b.second);
+}
+
+pair<double, double> vec_scalarmult(double a, pair<double, double> b) {
+	return make_pair(a*b.first, a*b.second);
+}
+
+pair<double, double> vec_add(pair<double, double> a, pair<double, double> b) {
+	return make_pair(a.first + b.first, a.second + b.second);
+}
+
+double square(double a) { //fairly certain pow has a special case for this but if not, doesn't hurt to write something like this
+	return a*a;
 }
 
 struct pqueue_index { //a notification
@@ -113,13 +190,21 @@ bool operator<(const pqueue_index&a, const pqueue_index & b) {
 
 struct actionval {
 	int roomba = 0;
-	int action = 0;
+	quad_state_type action = HOVER;
 	int score = 0;
-	int special = 0;
+	//int special = 0;
 	bool operator<(actionval & other) {
 		return score < other.score;
 	}
+	actionval(int, quad_state_type);
+	actionval();
 };
+actionval::actionval(int a, quad_state_type b) : roomba(a),action(b)  {}
+actionval::actionval() {
+	action = HOVER;
+	score = 0;
+	roomba = 0;
+}
 
 struct evaluationFunctor {
 	virtual int operator()(trial * a, double time) = 0 {
@@ -140,10 +225,10 @@ struct trial {
 	double currquadtime = 0;
 	void evaluatetime(double until);
 	void reverttime(double until);
-	vector<actionval> * bestMove(evaluationFunctor & a,double until);
+	vector<actionval> * bestMove(evaluationFunctor & a, double until, actionval * lastMove);
 	vector<actionval> * getActions(double time);
-	static vector<actionval> actions;
-	quad_action * quad; //this trial's quad action
+	quad_action * startquad; //this trial's quad actions
+	quad_action * currquad; //this trial's quad action
 };
 
 
@@ -184,28 +269,57 @@ public:
 
 class quad_action {
 public:
-	double dx = 0;
-	double dy = 0;
-	double start_time = 0;
-	double end_time = 0;
+	double dx;
+	double dy;
+	double dh;
+	double start_time;
+	double startheight; //because why not
+	double end_time;
 	double orientation; //unused currently
 	pair<double, double> startpos;
-	quad_action * parent = nullptr;
-	quad_action * child = nullptr;
+	quad_action * parent;
+	quad_action * child;
 	quad_action::quad_action(double end, pair<double, double> velocity, quad_action * prior, roomba_action * track, quad_state_type t);
+	quad_action::quad_action(trial * tr, simulation * sim);
 	trial * c_test;
 	simulation * c_sim;
 	roomba_action * tracking;
 	//void append();
 	quad_state_type mytype;
-	bool executeAction(actionval & a,double time,double until);
+	bool executeAction(actionval & a,double until);
 	bool flyTo(int roomba,double until);
 	double simpleTimeEst(actionval & a,double time);
 	pair<double, double> getposition(double at_time);
+	double getheight(double at_time);
+	void spawn_state(double at_time, quad_state_type st);
 	~quad_action();
 };
 
-quad_action::quad_action(double end, pair<double,double> toward,quad_action * prior,roomba_action * track,quad_state_type t) {
+quad_action::quad_action(double end, pair<double,double> toward,quad_action * prior,roomba_action * track,quad_state_type st) { //this is NOT consistent with the spawn_state shenanigans I do with roombas. Will rectify.
+	startheight = prior->getheight(prior->end_time);
+	switch (st) {
+		case ASCEND:
+			dh = quadvSpeedEst;
+			break;
+		case TAP:
+			dh = quadvSpeedEstInteracting;
+			break;
+		case BUMP:
+			dh = quadvSpeedEstInteracting;
+			break;
+		default:
+			dh = min(abs((cruiseHeight-startheight) / (end - prior->end_time)), quadvSpeedEst)*(((cruiseHeight-startheight)>0)?1:-1); //makes it tend toward the cruise height
+			break;
+	}
+	if (prior->tracking != nullptr) {
+
+	}
+	if (prior->child != nullptr) {
+		delete prior->child;
+	}
+	prior->child = this;  //we assume prior exists. if it doesn't, we have a problem.
+	startpos = prior->getposition(prior->end_time);
+	startheight = prior->getheight(prior->end_time);
 	start_time = prior->end_time; //pretty self explanatory
 	end_time = end;
 	double magnitude = sqrt(toward.first*toward.first + toward.second*toward.second);
@@ -215,13 +329,30 @@ quad_action::quad_action(double end, pair<double,double> toward,quad_action * pr
 	c_test = prior->c_test;
 	c_sim = prior->c_sim;
 	tracking = track;
-	mytype = t;
+	mytype = st;
+	c_test->currquadtime = prior->end_time;
+	c_test->currquad = this;
+}
+
+quad_action::quad_action(trial * tr, simulation * sim) { //initial constructor
+	start_time = 0; //pretty self explanatory
+	end_time = cruiseHeight / quadvSpeedEst;
+	dx = 0;
+	dy = 0;
+	dh = quadvSpeedEst; //going up
+	child = nullptr;
+	parent = nullptr;
+	c_test = tr;
+	c_sim = sim;
+	tracking = nullptr;
+	mytype = ASCEND;
+	c_test->currquad = this;
 }
 
 roomba_action * fetchInterceptState(roomba_action * targ,quad_action * copter,double cap) { //can quad reach this roomba state within time bounds? If not, is there too much time or too little.
 	double dist_to, coverable;
 	do {
-		dist_to = distance(targ->startpos, copter->startpos);
+		dist_to = dist(targ->startpos, copter->startpos);
 		coverable = quadSpeedEst * (cap - copter->start_time);
 		if (dist_to >= coverable) {
 			return (targ->child); //return state we're going to run into. could be nullptr
@@ -229,28 +360,71 @@ roomba_action * fetchInterceptState(roomba_action * targ,quad_action * copter,do
 		cap = targ->start_time;
 		targ = targ->parent;
 	} while (dist_to < coverable);
+	return nullptr;
+}
+
+bool quad_action::executeAction(actionval & a, double until) {
+	double endt;
+	switch (a.action) {
+		case TAP:
+			endt = c_test->currquadtime + abs((roombaTapHeight - getheight(c_test->currquadtime)) / quadvSpeedEstInteracting);
+			if (endt > until) {
+				return false;
+			}
+			child = new quad_action(endt, make_pair(0, 0), this, c_test->currbots[a.roomba],TAP);
+			if (c_test->currtime < endt) {
+				c_test->evaluatetime(endt); //we wanna know what state we'll be interacting with
+			}
+			c_test->currbots[a.roomba]->addevent(endt, MAGNET);
+			break;
+		case BUMP:
+			endt = c_test->currquadtime + abs((roombaBumpHeight - getheight(c_test->currquadtime)) / quadvSpeedEstInteracting);
+			if (endt > until) {
+				return false;
+			}
+			child = new quad_action(endt, make_pair(0, 0), this, c_test->currbots[a.roomba], BUMP);
+			if (c_test->currtime < endt) {
+				c_test->evaluatetime(endt); //we wanna know what state we'll be interacting with
+			}
+			c_test->currbots[a.roomba]->addevent(endt, TOUCHED);
+			break;
+		case ASCEND:
+			endt = c_test->currquadtime + abs((cruiseHeight - getheight(c_test->currquadtime)) / quadvSpeedEst);
+			if (endt > until) {
+				return false;
+			}
+			child = new quad_action(endt, make_pair(0, 0), this, nullptr, ASCEND);
+			break;
+		default:
+			break;
+	}
+	return true;
 }
 
 bool quad_action::flyTo(int roomba, double until) { //cut time before calculation done
 	double beginTime = c_test->currquadtime;
 	double workingTime = beginTime;
-	roomba_action * cstate = c_test->currbots[roomba];
+	roomba_action * istate = c_test->currbots[roomba];
 	double cap = min(c_test->currtime, until);//upper time bound
-	cstate = fetchInterceptState(cstate, this, cap);
+	roomba_action * cstate = fetchInterceptState(istate, this, cap);
 	while (cstate == nullptr) {
 		if (c_test->currtime >= until) { //if we've exceeded the max allotted time
 			return false; //cannot be flown to
 		}
 		else {
-			c_test->evaluatetime(min(c_test->currtime+1, until)); //extends prediction up to 1 second into the future, replace this with something more elegant later
+			c_test->evaluatetime(min(istate->end_time+0.1, until)); 
+		}
+		if (c_test->currtime < until) {
+			cstate = fetchInterceptState(istate, this, cap);
 		}
 	}
+	//while ()
 	double dist_to, coverable;
-	dist_to = distance(cstate->startpos, startpos);
+	dist_to = dist(cstate->startpos, startpos);
 	coverable = quadSpeedEst * (cap - beginTime);
 	workingTime = (cstate->start_time - cstate->end_time) / 2;
 	int i = 0;
-	while (((abs(dist_to-coverable))>newton_accuracy) && (i<newton_iterations)) {
+	while (((abs(dist_to-coverable))>newton_accuracy) && (i<newton_iterations)) { //todo: make readable with simple methods created earlier in code
 		double ang = (cstate->rw_v - cstate->lw_v)*workingTime / wheelbase_width + cstate->initial_angle;
 		double a = wheelbase_width*(cstate->rw_v + cstate->lw_v) / 2 / (cstate->rw_v - cstate->lw_v);
 		double x_t = cstate->startpos.first + a*(sin(ang) - sin(cstate->initial_angle));
@@ -262,15 +436,37 @@ bool quad_action::flyTo(int roomba, double until) { //cut time before calculatio
 		workingTime = workingTime - func / prime;
 		++i;
 	}
+	if (workingTime > until) {
+		return false;
+	}
 	pair<double, double> endpos = cstate->getposition(workingTime);
-	child = new quad_action();
-	//figure out intercept time
-	//while (workingTime < cap) { //once we've gotten all that sorted out and figured out what our appropriate state is
-	//}
+	child = new quad_action(workingTime,vec_subtract(endpos,startpos),this,nullptr,FLY);
+	c_test->currquadtime = workingTime; //just skip to end
+	return true;
 }
 
 double quad_action::simpleTimeEst(actionval & a, double time) {
-	return distance(c_test->currbots[a.roomba]->getposition(time), getposition(time));
+	return dist(c_test->currbots[a.roomba]->getposition(time), getposition(time));
+}
+
+pair<double, double> quad_action::getposition(double at_time) {
+	if (start_time > at_time) { //make it work universally
+		return parent->getposition(at_time);;
+	}
+	if ((child != nullptr) && (child->start_time < at_time)) {
+		return child->getposition(at_time);
+	}
+	//simplistic code for rn
+	if (tracking != nullptr) { //this assumes we can perfectly follow a roomba, which isn't too much of a stretch
+		return vec_add(vec_subtract(tracking->getposition(at_time), tracking->getposition(start_time)),startpos); //add displacement of roomba over interval to position at start
+	}
+	else {
+		return vec_add(vec_scalarmult(quadSpeedEst*(at_time-start_time), make_pair(dx, dy)),startpos); //add displacement due to velocity to position at start
+	}
+}
+
+double quad_action::getheight(double at_time) {
+	return startheight + dh*(at_time - start_time);
 }
 
 
@@ -284,14 +480,15 @@ public:
 	simulation(double offset);
 	actionval bestMove(evaluationFunctor & a,double until);
 	simulation::simulation(int trials);
+	vector<actionval> actions;
 	//actionval simulation::branch();
 };
 
 
 vector<actionval> * trial::getActions(double time) {
-	vector<actionval> * a = new vector<actionval>(actions);
+	vector<actionval> * a = new vector<actionval>(c_sim->actions);
 	auto comp = [&](actionval & a, actionval & b) {
-		return (quad->simpleTimeEst(a,time) < quad->simpleTimeEst(b,time));
+		return (currquad->simpleTimeEst(a,time) < currquad->simpleTimeEst(b,time));
 	};
 	sort(a->begin(), a->end(),comp);
 	return a;
@@ -300,17 +497,32 @@ vector<actionval> * trial::getActions(double time) {
 //recursive call. use distance to estimate actual time required. sort actionvals by this
 
 
-vector<actionval> * trial::bestMove(evaluationFunctor & a,double until) {
+vector<actionval> * trial::bestMove(evaluationFunctor & a,double until,actionval * lastMove) {
 	vector<actionval> * act = getActions(currtime); //currtime is needed to sort
+
 	for (auto && it : (*act)) {
+		bool worked;
 		double quad_time_before = currquadtime; 
-		quad_action * quad_state_before = quad;
-		bool flew = quad->flyTo(it.roomba, until); //similair to evaluatetime except keeps going till quad gets to the roomba
-		double time_before = currtime;
+		quad_action * quad_state_before = currquad;
+		if (lastMove != nullptr) {
+			/*if (it.roomba == lastMove->roomba) {            !!!!!!!!!!!!!!!!!!
+				//do something efficient
+			}
+			else {
+				worked = currquad->executeAction(temp,until);
+			}*/
+			worked = currquad->executeAction(actionval(0,ASCEND),until);
+		}
+		if (worked) {
+			worked = currquad->flyTo(it.roomba, until); //similair to evaluatetime except keeps going till quad gets to the end
+		}
+		double time_before = currtime; //time before aerial robot actually makes any changes to the model
 		roomba_action * state_before = currbots[it.roomba]; //save current state of roomba we're about to mess with
-		bool interacted = quad->executeAction(it, currquadtime,until);
-		if (flew && interacted) { //pick best member
-			vector<actionval> * ret = bestMove(a, until);
+		if (worked) { //if we were able to fly to it
+			worked = currquad->executeAction(it, until);
+		}
+		if (worked) { //pick best member
+			vector<actionval> * ret = bestMove(a, until,&it);
 			it.score = max_element(ret->begin(),ret->end())->score;
 			delete ret;
 		}
@@ -323,7 +535,7 @@ vector<actionval> * trial::bestMove(evaluationFunctor & a,double until) {
 		}
 		if (quad_state_before->child) {
 			delete quad_state_before->child; //eliminate any trace of the action happening
-			quad = quad_state_before;
+			currquad = quad_state_before;
 		}
 		currquadtime = quad_time_before;
 		reverttime(time_before);
@@ -335,15 +547,15 @@ actionval simulation::bestMove(evaluationFunctor & a, double until) {
 	auto getMedian = [](actionval * arrin, int arrsize) {
 		return (arrsize % 2) ? arrin[arrsize / 2].score : ((arrin[arrsize / 2].score += arrin[arrsize / 2 - 1].score)/2);
 	};
-	actionval ** values = new actionval *[tests.front().actions.size()]; //first index is for each action, second index is for each trial
-	for (int i = 0; i < tests.size(); ++i) {
+	actionval ** values = new actionval *[actions.size()]; //first index is for each action, second index is for each trial
+	for (unsigned int i = 0; i < tests.size(); ++i) {
 		values[i] = new actionval[tests.size()];
 	}
 	{
 		int i = 0;
 		for (auto && it : tests) {
-			vector<actionval> * retv = it.bestMove(a, until); //get best moves for the trial
-			for (int j = 0; j < it.actions.size(); ++j) {
+			vector<actionval> * retv = it.bestMove(a, until,nullptr); //get best moves for the trial
+			for (unsigned int j = 0; j < actions.size(); ++j) {
 				values[j][i] = (*retv)[j]; //enter it in a useful way
 			}
 			++i;
@@ -353,7 +565,7 @@ actionval simulation::bestMove(evaluationFunctor & a, double until) {
 	int bestaction = 0;
 	sort(values[0], values[0] + tests.size());
 	int bestvalue = getMedian(values[0], tests.size());
-	for (int i = 1; i < tests.front().actions.size(); ++i) {
+	for (unsigned int i = 1; i < actions.size(); ++i) {
 		sort(values[i], values[i] + tests.size());
 		int temp = getMedian(values[i], tests.size());
 		if (temp > bestvalue) {
@@ -366,7 +578,10 @@ actionval simulation::bestMove(evaluationFunctor & a, double until) {
 }
 
 simulation::simulation(int trials) {
-
+	for (int i = 0; i < 10; ++i) {
+		actions.push_back(actionval(i, BUMP));
+		actions.push_back(actionval(i, TAP));
+	}
 }
 /*
 simulation::simulation(double offset) {
@@ -385,7 +600,7 @@ void HSVtoRGB(double *r, double *g, double *b, double h, double s, double v) {
 		return;
 	}
 	h /= 60;			// sector 0 to 5
-	i = floor(h);
+	i = (int)floor(h);
 	f = h - i;			// factorial part of h
 	p = v * (1 - s);
 	q = v * (1 - s * f);
@@ -425,19 +640,19 @@ void HSVtoRGB(double *r, double *g, double *b, double h, double s, double v) {
 }
 
 /*void draw(pair<double, double> in, HDC hdc, RECT* prc) {
-	//HDC hdcBuffer = CreateCompatibleDC(hdc);
-	//HBITMAP hbmBuffer = CreateCompatibleBitmap(hdc, prc->right, prc->bottom);
-	//HBITMAP hbmOldBuffer = (HBITMAP)SelectObject(hdcBuffer, hbmBuffer);
+	HDC hdcBuffer = CreateCompatibleDC(hdc);
+	HBITMAP hbmBuffer = CreateCompatibleBitmap(hdc, prc->right, prc->bottom);
+	HBITMAP hbmOldBuffer = (HBITMAP)SelectObject(hdcBuffer, hbmBuffer);
 
-	//HDC hdcMem = CreateCompatibleDC(hdc);
-	//HBITMAP hbmOld = (HBITMAP)SelectObject(hdcMem, g_hbmMask);
+	HDC hdcMem = CreateCompatibleDC(hdc);
+	HBITMAP hbmOld = (HBITMAP)SelectObject(hdcMem, g_hbmMask);
 
-	//FillRect(hdcBuffer, prc, (HBRUSH)GetStockObject(WHITE_BRUSH));
+	FillRect(hdcBuffer, prc, (HBRUSH)GetStockObject(WHITE_BRUSH));
 
 	//BitBlt(hdcBuffer, g_ballInfo.x, g_ballInfo.y, g_ballInfo.width, g_ballInfo.height, hdcMem, 0, 0, SRCAND);
-	Ellipse(hdcBuffer, (int)40 * (in.first - roombaDiameter / 2), (int)40 * (in.second - roombaDiameter / 2), (int)40 * (in.first + roombaDiameter / 2), (int)40 * in.second + roombaDiameter / 2);
+	//Ellipse(hdcBuffer, (int)40 * (in.first - roombaDiameter / 2), (int)40 * (in.second - roombaDiameter / 2), (int)40 * (in.first + roombaDiameter / 2), (int)40 * in.second + roombaDiameter / 2);
 	//SelectObject(hdcMem, g_hbmBall);
-	//BitBlt(hdcBuffer, g_ballInfo.x, g_ballInfo.y, g_ballInfo.width, g_ballInfo.height, hdcMem, 0, 0, SRCPAINT);
+	//BitBlEt(hdcBuffer, g_ballInfo.x, g_ballInfo.y, g_ballInfo.width, g_ballInfo.height, hdcMem, 0, 0, SRCPAINT);
 
 	//BitBlt(hdc, 0, 0, prc->right, prc->bottom, hdcBuffer, 0, 0, SRCCOPY); //writes
 
@@ -467,11 +682,12 @@ void trial::reverttime(double until) {
 }
 
 void trial::evaluatetime(double until) {
+	//cout << "Blah" << endl;
 	//if (!organizer.empty()) {	//int a = 0;
 	double interval = ((double)15 / (double)1000);
 	while (currtime < until) {
 		//double interval = ((double)15 / (double)1000);
-		if ((currtime + interval) <= until) {
+		if ((currtime + interval) < until) {
 			currtime += interval;
 		}
 		else {
@@ -485,12 +701,12 @@ void trial::evaluatetime(double until) {
 			if (first.at_time <= currtime) {
 				organizer.pop();
 				//cout << first.caller->ID << endl;
-				if (first.caller->child == nullptr) {
+				//if (first.caller->child == nullptr) {
 					first.caller->notify(first.at_time, first); //send notification
-				}
+				/*}
 				else while ((currbots[first.caller->ID]->child != nullptr)&&(currbots[first.caller->ID]->child->start_time <= currtime)) { //make it move through known motions
 					currbots[first.caller->ID] = currbots[first.caller->ID]->child; //move down the line
-				}
+				}*/
 			}
 			else {
 				break;
@@ -500,17 +716,15 @@ void trial::evaluatetime(double until) {
 }
 
 void trial::show(double until,HDC hdc, RECT * prc) { //use this method to show things on the sketchy renderer.
-	double interval = 30 / 1000;
+	double interval = (double)15.0 / (double)1000.0;
 	while (currtime < until) {
-		evaluatetime(until + interval);
+		evaluatetime(currtime + interval);
 		HDC hdcBuffer = CreateCompatibleDC(hdc);
 		HBITMAP hbmBuffer = CreateCompatibleBitmap(hdc, prc->right, prc->bottom);
 		FillRect(hdcBuffer, prc, (HBRUSH)GetStockObject(WHITE_BRUSH));
 		int savedDC = SaveDC(hdcBuffer);
 		SelectObject(hdcBuffer, hbmBuffer);
-
 		for (int i = 0; i < 14; i++) {
-
 			SelectObject(hdcBuffer, GetStockObject(DC_BRUSH));
 			SetDCBrushColor(hdcBuffer, RGB(255, 0, 0));
 			SelectObject(hdcBuffer, GetStockObject(DC_PEN));
@@ -747,7 +961,11 @@ roomba_action::roomba_action(double at_time,roomba_action * par,state_type type)
 }
 
 void roomba_action::spawn_state(double at_time,state_type st) {
+	//allows us to do weird stuff starting with a state change back in time and progressing forward, updating the sim as we go. I believe
 	roomba_action * temp;
+	if (child != nullptr) { 
+		delete child; //important
+	}
 	temp = new roomba_action(at_time, this, st);
 	end_time = at_time;
 	child = temp;
@@ -757,6 +975,7 @@ void roomba_action::spawn_state(double at_time,state_type st) {
 
 trial::trial(simulation * sims) {
 	c_sim = sims;
+	currtime = 0;
 	for (int i = 0; i < 10; i++) {
 		double ang = fix_angle((2 * M_PI / 10)*i/* + c_sim->roomba_offset*/);
 		startbots[i] = new roomba_action(0.0, make_pair(10.0 + cos(ang), 10.0 + sin(ang)), ang, this, i, false);
