@@ -14,8 +14,6 @@
 #include <set>
 
 
-
-
 //NOT COMPLETE, PREDICTION IS NOT FULLY FUNCTIONAL.
 //I just need to get the aerial robot behavior implemented and drawn
 
@@ -64,6 +62,8 @@ double roombaDiameter = 0.34;
 
 double runendtime = 600; //default state end time
 
+double newton_accuracy = 0.1; //within 10 cm for now
+int newton_iterations = 3;
 
 double topTouchTimereq = 100;
 double bumperTimereq = 100;
@@ -186,32 +186,49 @@ class quad_action {
 public:
 	double dx = 0;
 	double dy = 0;
+	double start_time = 0;
+	double end_time = 0;
 	double orientation; //unused currently
-	quad_action * parent;
-	quad_action * child;
+	pair<double, double> startpos;
+	quad_action * parent = nullptr;
+	quad_action * child = nullptr;
+	quad_action::quad_action(double end, pair<double, double> velocity, quad_action * prior, roomba_action * track, quad_state_type t);
 	trial * c_test;
 	simulation * c_sim;
 	roomba_action * tracking;
 	//void append();
 	quad_state_type mytype;
 	bool executeAction(actionval & a,double time,double until);
-	bool flyTo(int roomba,double time,double until);
+	bool flyTo(int roomba,double until);
 	double simpleTimeEst(actionval & a,double time);
 	pair<double, double> getposition(double at_time);
 	~quad_action();
 };
 
-roomba_action fetchInterceptState(roomba_action * targ,quad_action * copter,double cap) { //can quad reach this roomba state within time bounds? If not, is there too much time or too little.
+quad_action::quad_action(double end, pair<double,double> toward,quad_action * prior,roomba_action * track,quad_state_type t) {
+	start_time = prior->end_time; //pretty self explanatory
+	end_time = end;
+	double magnitude = sqrt(toward.first*toward.first + toward.second*toward.second);
+	dx = toward.first / magnitude;
+	dy = toward.second / magnitude;
+	child = nullptr;
+	c_test = prior->c_test;
+	c_sim = prior->c_sim;
+	tracking = track;
+	mytype = t;
+}
+
+roomba_action * fetchInterceptState(roomba_action * targ,quad_action * copter,double cap) { //can quad reach this roomba state within time bounds? If not, is there too much time or too little.
 	double dist_to, coverable;
 	do {
-		dist_to = distance(cstate->startpos, copter->startpos);
-		coverable = quadSpeedEst * (cap - copter->beginTime);
+		dist_to = distance(targ->startpos, copter->startpos);
+		coverable = quadSpeedEst * (cap - copter->start_time);
 		if (dist_to >= coverable) {
-			return targ->child; //return state we're going to run into. could be nullptr
+			return (targ->child); //return state we're going to run into. could be nullptr
 		}
 		cap = targ->start_time;
 		targ = targ->parent;
-	} while (dist_to < coverable)
+	} while (dist_to < coverable);
 }
 
 bool quad_action::flyTo(int roomba, double until) { //cut time before calculation done
@@ -219,7 +236,7 @@ bool quad_action::flyTo(int roomba, double until) { //cut time before calculatio
 	double workingTime = beginTime;
 	roomba_action * cstate = c_test->currbots[roomba];
 	double cap = min(c_test->currtime, until);//upper time bound
-	cstate = fetchIntceptState(cstate, this, cap);
+	cstate = fetchInterceptState(cstate, this, cap);
 	while (cstate == nullptr) {
 		if (c_test->currtime >= until) { //if we've exceeded the max allotted time
 			return false; //cannot be flown to
@@ -229,12 +246,24 @@ bool quad_action::flyTo(int roomba, double until) { //cut time before calculatio
 		}
 	}
 	double dist_to, coverable;
-	dist_to = distance(cstate->startpos, copter->startpos);
-	coverable = quadSpeedEst * (cap - copter->beginTime);
+	dist_to = distance(cstate->startpos, startpos);
+	coverable = quadSpeedEst * (cap - beginTime);
 	workingTime = (cstate->start_time - cstate->end_time) / 2;
-	while () {
-		
+	int i = 0;
+	while (((abs(dist_to-coverable))>newton_accuracy) && (i<newton_iterations)) {
+		double ang = (cstate->rw_v - cstate->lw_v)*workingTime / wheelbase_width + cstate->initial_angle;
+		double a = wheelbase_width*(cstate->rw_v + cstate->lw_v) / 2 / (cstate->rw_v - cstate->lw_v);
+		double x_t = cstate->startpos.first + a*(sin(ang) - sin(cstate->initial_angle));
+		double y_t = cstate->startpos.second - a*(cos(ang) - cos(cstate->initial_angle));
+		double x_prime = ((cstate->rw_v + cstate->lw_v) / 2)*cos(ang);
+		double y_prime = ((cstate->rw_v + cstate->lw_v) / 2)*sin(ang);
+		double func = (startpos.first - x_t)*(startpos.first - x_t) + (startpos.second - y_t) * (startpos.second - y_t) - (quadSpeedEst*workingTime)*(quadSpeedEst*workingTime);
+		double prime = -2*(startpos.first - x_t)*x_prime - 2*(startpos.second - y_t)*y_prime - 2*quadSpeedEst*quadSpeedEst*workingTime;
+		workingTime = workingTime - func / prime;
+		++i;
 	}
+	pair<double, double> endpos = cstate->getposition(workingTime);
+	child = new quad_action();
 	//figure out intercept time
 	//while (workingTime < cap) { //once we've gotten all that sorted out and figured out what our appropriate state is
 	//}
@@ -276,7 +305,7 @@ vector<actionval> * trial::bestMove(evaluationFunctor & a,double until) {
 	for (auto && it : (*act)) {
 		double quad_time_before = currquadtime; 
 		quad_action * quad_state_before = quad;
-		bool flew = quad->flyTo(it.roomba, currquadtime, until); //similair to evaluatetime except keeps going till quad gets to the roomba
+		bool flew = quad->flyTo(it.roomba, until); //similair to evaluatetime except keeps going till quad gets to the roomba
 		double time_before = currtime;
 		roomba_action * state_before = currbots[it.roomba]; //save current state of roomba we're about to mess with
 		bool interacted = quad->executeAction(it, currquadtime,until);
