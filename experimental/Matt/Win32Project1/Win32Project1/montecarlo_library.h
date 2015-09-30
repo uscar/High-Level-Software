@@ -179,9 +179,10 @@ struct pqueue_index { //a notification
 	roomba_action * caller; //who we'll notify
 	roomba_action * linked; //the possible roomba that 
 	notification type;
+	bool quadhit;
 	double at_time;
 	//bool quad_notify;
-	pqueue_index(roomba_action * call, roomba_action * link, notification ty, double t) : caller(call), linked(link), type(ty), at_time(t) {
+	pqueue_index(roomba_action * call, roomba_action * link, notification ty, double t,bool qhit) : caller(call), linked(link), type(ty), at_time(t), quadhit(qhit){
 		//quad_notify = false;
 	}
 	/*bool operator<(const pqueue_index & a) {
@@ -245,7 +246,7 @@ public:
 	roomba_action * parent = nullptr;
 	roomba_action * child = nullptr;
 
-
+	void addquadevent(double at_time, notification type);
 	state_type mytype;
 
 	double next_noise;
@@ -254,7 +255,7 @@ public:
 
 	double start_time;
 	double end_time; 
-	double end_signal;
+	double initial_end;
 	trial * c_test;
 	simulation * c_sim;
 
@@ -403,7 +404,7 @@ bool quad_action::executeAction(actionval & a, double until) {
 			if (c_test->currtime < endt) {
 				c_test->evaluatetime(endt); //we wanna know what state we'll be interacting with
 			}
-			c_test->currbots[a.roomba]->addevent(endt, MAGNET);
+			c_test->currbots[a.roomba]->addquadevent(endt, MAGNET);
 			break;
 		case BUMP:
 			endt = c_test->currquadtime + abs((roombaBumpHeight - getheight(c_test->currquadtime)) / quadvSpeedEstInteracting);
@@ -416,7 +417,7 @@ bool quad_action::executeAction(actionval & a, double until) {
 			if (c_test->currtime < endt) {
 				c_test->evaluatetime(endt); //we wanna know what state we'll be interacting with
 			}
-			c_test->currbots[a.roomba]->addevent(endt, TOUCHED);
+			c_test->currbots[a.roomba]->addquadevent(endt, TOUCHED);
 			break;
 		case ASCEND:
 			endt = c_test->currquadtime + abs((cruiseHeight - getheight(c_test->currquadtime)) / quadvSpeedEst);
@@ -506,7 +507,7 @@ double quad_action::simpleTimeEst(actionval & a, double time) {
 
 pair<double, double> quad_action::getposition(double at_time) {
 	if (start_time > at_time) { //make it work universally
-		return parent->getposition(at_time);;
+		return parent->getposition(at_time);
 	}
 	if ((child != nullptr) && (child->start_time < at_time)) {
 		return child->getposition(at_time);
@@ -544,10 +545,10 @@ public:
 
 vector<actionval> * trial::getActions(double time) {
 	vector<actionval> * a = new vector<actionval>(c_sim->actions);
-	auto comp = [&](actionval & a, actionval & b) {
-		return (currquad->simpleTimeEst(a,time) < currquad->simpleTimeEst(b,time));
-	};
-	sort(a->begin(), a->end(),comp);
+	//auto comp = [&](actionval & a, actionval & b) {
+	//	return (currquad->simpleTimeEst(a,time) < currquad->simpleTimeEst(b,time));
+	//};
+	//sort(a->begin(), a->end(),comp);
 	return a;
 }
 
@@ -570,17 +571,24 @@ vector<actionval> * trial::bestMove(evaluationFunctor & a,double until,actionval
 	else {
 		ascent = true;
 	}
+	roomba_action * priorstates[14];
 	for (auto && it : (*act)) {
 		double quad_time_before = currquadtime;
 		bool worked = ascent;
 		if (worked) {
 			worked = currquad->flyTo(it.roomba, until); //similair to evaluatetime except keeps going till quad gets to the end
 		}
+
+		//debug code
+		for (int i = 0; i < 14; ++i) { 
+			priorstates[i] = currbots[i];
+		}
+		//just a test yo
+
 		double time_before = currtime; //time before aerial robot actually makes any changes to the model
 		roomba_action * state_before = currbots[it.roomba]; //save current state of roomba we're about to mess with
 		if (worked) { //if we were able to fly to it
 			worked = currquad->executeAction(it, until);
-
 		}
 		if (worked) { //pick best member
 			vector<actionval> * ret = bestMove(a, until,&it);
@@ -590,16 +598,31 @@ vector<actionval> * trial::bestMove(evaluationFunctor & a,double until,actionval
 		else {
 			it.score = a(this, until);
 		}
-		if (state_before->child) {
-			delete state_before->child; //eliminate any trace of the action happening
-			currbots[it.roomba] = state_before;
-		}
+		//if (state_before->child) {
+			//delete state_before->child; //eliminate any trace of the action happening
+			//currbots[it.roomba] = state_before;
+		//}
 		if (quad_state_before->child) {
 			delete quad_state_before->child; //eliminate any trace of the action happening
 			currquad = quad_state_before;
 		}
 		currquadtime = quad_time_before;
-		reverttime(time_before);
+		//reverttime(time_before);
+		while (!organizer.empty()) {
+			organizer.pop();
+		}
+		currtime = time_before; //taking a different approach to reverts
+		for (int i = 0; i < 14; ++i) {
+			currbots[i] = priorstates[i];
+			if (currbots[i]->child != nullptr) {
+				delete currbots[i]->child;
+				currbots[i]->child = nullptr;
+			}
+			currbots[i]->initNotify();
+		}
+		collision_handle();
+		evaluatetime(currtime+0.001); //because why not
+		currtime -= 0.001;
 	}
 	return act;
 }
@@ -738,6 +761,7 @@ void trial::reverttime(double until) {
 			currbots[i]->initNotify(); //renotify
 		}
 		currtime = until;
+		evaluatetime(currtime); //why not
 		collision_handle();
 	}
 }
@@ -889,36 +913,36 @@ void trial::collision_handle() {
 				if (fix_angle(atan2(b.second - a.second, b.first - a.first) - currbots[i]->getrotation(currtime) + pi / 2) <= pi) { //if other is in front
 					if ((!clist[i][j]) || (currbots[i]->mytype == RUN) || (currbots[i]->mytype == RANDROT) || (currbots[i]->mytype == TOPTOUCH) || (currbots[i]->mytype == OBSTACLERUN)) {
 						clist[i][j] = true;
-						organizer.push(pqueue_index(currbots[i], currbots[j], TOUCHED, currtime));
+						organizer.push(pqueue_index(currbots[i], currbots[j], TOUCHED, currtime,false));
 					}
 				}
 				else {
 					//put some debug stuff here!
 					if (clist[i][j]) {
-						organizer.push(pqueue_index(currbots[i], currbots[j], TOUCHENDED, currtime));
+						organizer.push(pqueue_index(currbots[i], currbots[j], TOUCHENDED, currtime,false));
 						clist[i][j] = false;
 					}
 				}
 				if (fix_angle(atan2(a.second - b.second, a.first - b.first) - currbots[j]->getrotation(currtime) + pi / 2) <= pi) { //if other is in front
 					if ((!clist[j][i]) || (currbots[j]->mytype == RUN) || (currbots[j]->mytype == RANDROT) || (currbots[j]->mytype == TOPTOUCH) || (currbots[i]->mytype == OBSTACLERUN)) {
 						clist[j][i] = true;
-						organizer.push(pqueue_index(currbots[j], currbots[i], TOUCHED, currtime));
+						organizer.push(pqueue_index(currbots[j], currbots[i], TOUCHED, currtime,false));
 					}
 				}
 				else {
 					if (clist[j][i]) {
-						organizer.push(pqueue_index(currbots[j], currbots[i], TOUCHENDED, currtime));
+						organizer.push(pqueue_index(currbots[j], currbots[i], TOUCHENDED, currtime,false));
 						clist[j][i] = false;
 					}				
 				}
 			}
 			else {
 				if (clist[i][j]) {
-					organizer.push(pqueue_index(currbots[i], currbots[j], TOUCHENDED, currtime));
+					organizer.push(pqueue_index(currbots[i], currbots[j], TOUCHENDED, currtime,false));
 					clist[i][j] = false;
 				}
 				if (clist[j][i]) {
-					organizer.push(pqueue_index(currbots[j], currbots[i], TOUCHENDED, currtime));
+					organizer.push(pqueue_index(currbots[j], currbots[i], TOUCHENDED, currtime,false));
 					clist[j][i] = false;
 				}
 			}
@@ -927,9 +951,12 @@ void trial::collision_handle() {
 }
 
 void roomba_action::addevent(double at_time, notification type) {
-	c_test->organizer.push(pqueue_index(this, nullptr, type, at_time));
+	c_test->organizer.push(pqueue_index(this, nullptr, type, at_time,false));
 }
 
+void roomba_action::addquadevent(double at_time, notification type) {
+	c_test->organizer.push(pqueue_index(this, nullptr, type, at_time,true));
+}
 
 void roomba_action::initNotify() {
 	switch (mytype){
@@ -1054,7 +1081,6 @@ roomba_action::roomba_action(double at_time,roomba_action * par,state_type type)
 	startpos = par->getposition(at_time);
 	initial_angle = fix_angle(par->getrotation(at_time));
 	start_time = at_time;
-	end_signal = -1;
 	ID = par->ID;
 }
 
@@ -1134,7 +1160,7 @@ void roomba_action::notify(double at_time, pqueue_index info) {
 		switch (info.type) {
 		case TOUCHED:
 			if (((mytype == RUN) || (mytype == RANDROT) || (mytype == TOPTOUCH))) { //check states to ensure they're legit
-				if ((info.linked == nullptr) || (info.linked->end_time >= at_time)) {
+				if (((info.linked != nullptr) && (info.linked->end_time >= at_time)) || info.quadhit) {
 					spawn_state(at_time,REVERSE);
 				}
 			}
