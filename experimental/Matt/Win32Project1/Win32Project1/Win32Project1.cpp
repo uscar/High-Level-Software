@@ -129,7 +129,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	int wmId, wmEvent;
 	PAINTSTRUCT ps;
 	HDC hdc;
-	trial tr = trial(nullptr);
+	simulation sim(0);
+	trial tr = trial(&sim);
 	switch (message)
 	{
 	case WM_COMMAND:
@@ -168,7 +169,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		DeleteDC(hdcMem);*/
 		srand(time(0));
 		//trial tr = trial(nullptr);
-		tr.show(600,hdc,&prc);
+		//tr.show(600,hdc,&prc);
+		tr.showBestmove(hdc, &prc);
 		EndPaint(hWnd, &ps);
 		break;
 	case WM_DESTROY:
