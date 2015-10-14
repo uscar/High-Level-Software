@@ -24,7 +24,6 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance,
 {
 	UNREFERENCED_PARAMETER(hPrevInstance);
 	UNREFERENCED_PARAMETER(lpCmdLine);
-
  	// TODO: Place code here.
 	MSG msg;
 	HACCEL hAccelTable;
@@ -102,7 +101,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
    hWnd = CreateWindow(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
       CW_USEDEFAULT, CW_USEDEFAULT, 800, 800, NULL, NULL, hInstance, NULL);
-
+   
    if (!hWnd)
    {
       return FALSE;
@@ -152,9 +151,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	case WM_PAINT: 
 		RECT prc;
 		GetWindowRect(hWnd, &prc);
-
+		
 		hdc = BeginPaint(hWnd, &ps);
-
+		
 		/*BITMAP 			bitmap;
 		HDC 			hdcMem;
 		HGDIOBJ 		oldBitmap;
@@ -170,9 +169,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		srand(time(0));
 		//trial tr = trial(nullptr);
 		//tr.show(600,hdc,&prc);
-		tr.showBestmove(hdc, &prc);
+		//tr.showBestmove(hdc, &prc);
+		//tr.show(120.0, hdc, &prc);
+		tr.show(200.0,hdc, &prc);
 		EndPaint(hWnd, &ps);
 		break;
+
 	case WM_DESTROY:
 		PostQuitMessage(0);
 		break;

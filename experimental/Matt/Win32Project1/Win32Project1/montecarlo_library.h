@@ -29,6 +29,7 @@ class simulation;
 class quad_action;
 class roomba_action;
 const int numroombas = 10;
+bool bestmove_test = false;
 long double pi = atan2(0, -1);
 
 //naive handling of trials, just for testing
@@ -73,7 +74,7 @@ double roombaDiameter = 0.34;
 double runendtime = 600; //default state end time
 
 double newton_accuracy = 0.1; //within 10 cm for now
-int newton_iterations = 7;
+int newton_iterations = 0;
 
 double topTouchTimereq = 100;
 double bumperTimereq = 100;
@@ -81,7 +82,7 @@ double bumperTimereq = 100;
 double FOV; //we need this value to find the vield of view as a function of height
 
 int branching = 5;
-double predictUntil = 8.0; //10s predictive capacity
+double predictUntil = 15.0; //10s predictive capacity?
 
 
 enum notification { TOUCHED, REVERSAL, NOISE, MAGNET, ENDED,TOUCHENDED,EXITED};
@@ -110,69 +111,66 @@ double square(double a) { //fairly certain pow has a special case for this but i
 	return a*a;
 }
 
-struct vec2d { //phase out pair<double,double>s in favor of this
-	double first;
-	double second;
-	pair<double, double> getPaired();
-	vec2d(double, double);
-	vec2d(pair<double, double>);
-	void swap();
+struct vec2d : pair<double,double>{ //phase out pair<double,double>s in favor of this
+	vec2d(const double &, const double &);
+	vec2d(const double &); //angle constructor. basically the opposite of atan2
+	vec2d(const pair<double, double> &);
+	vec2d();
 	double getMagnitude();
+	double square_components(); //a^2 + b^2
+	double dist_to(const vec2d & other);
+	vec2d operator+(const vec2d & other);
+	vec2d operator-(const vec2d & other);
+	double dot(const vec2d & other);
 };
 
-void vec2d::swap() {
-	double t = first;
-	first = second;
-	second = t;
+vec2d::vec2d() {}
+
+double vec2d::dot(const vec2d & other) {
+	return first*other.first + second*other.second;
+}
+
+double vec2d::square_components() {
+	return first*first + second*second;
 }
 
 double vec2d::getMagnitude() {
-	return sqrt(first*first + second*second);
+	return sqrt(square_components());
 }
 
-pair<double,double> vec2d::getPaired() {
-	return make_pair(first, second);
+double vec2d::dist_to(const vec2d & other) {
+	return (operator-(other)).getMagnitude();
 }
 
-vec2d::vec2d(double a, double b) {
+vec2d::vec2d(const double & a, const double & b) {
 	first = a;
 	second = b;
 }
 
-vec2d::vec2d(pair<double,double> a) {
+vec2d::vec2d(const double & angle) {
+	first = cos(angle);
+	second = sin(angle);
+}
+
+vec2d::vec2d(const pair<double,double> & a) {
 	first = a.first;
 	second = a.second;
 }
 
-vec2d operator* (double a, const vec2d& b) {
+vec2d operator* (const double & a, const vec2d& b) {
 	return vec2d(a*b.first,a*b.second);
 }
 
-vec2d operator* (const vec2d& a, double b) {
+vec2d operator* (const vec2d& a, const double & b) {
 	return vec2d(a.first*b, a.second*b);
 }
 
-vec2d operator+(const vec2d & a,const vec2d & b) {
-	return vec2d(a.first + b.first, a.second + b.second);
-}
-vec2d operator-(const vec2d & a,const vec2d & b) {
-	return vec2d(a.first - b.first, a.second - b.second);
+vec2d vec2d::operator+(const vec2d & a) {
+	return vec2d(first + a.first, second + a.second);
 }
 
-double dist(pair<double, double> a, pair<double, double> b) {
-	return sqrt(square(a.first - b.first) + square(a.second - b.second));
-}
-
-pair<double, double> vec_subtract(pair<double, double> a, pair<double, double> b) {
-	return make_pair(a.first - b.first, a.second - b.second);
-}
-
-pair<double, double> vec_scalarmult(double a, pair<double, double> b) {
-	return make_pair(a*b.first, a*b.second);
-}
-
-pair<double, double> vec_add(pair<double, double> a, pair<double, double> b) {
-	return make_pair(a.first + b.first, a.second + b.second);
+vec2d vec2d::operator-(const vec2d & a) {
+	return vec2d(first - a.first, second - a.second);
 }
 
 struct pqueue_index { //a notification
@@ -197,34 +195,36 @@ bool operator<(const pqueue_index&a, const pqueue_index & b) {
 struct actionval {
 	int roomba = 0;
 	quad_state_type action = HOVER;
-	int score = 0;
+	double score = 0;
 	//int special = 0;
 	bool operator<(actionval & other) {
 		return score < other.score;
 	}
-	actionval(int, quad_state_type);
+	actionval(double, quad_state_type);
 	actionval();
 };
-actionval::actionval(int a, quad_state_type b) : roomba(a),action(b)  {}
+actionval::actionval(double a, quad_state_type b) : roomba(a),action(b)  {}
 actionval::actionval() {
 	action = HOVER;
 	score = 0;
 	roomba = 0;
 }
 
-double quadParamLineIntersect(pair<double, double> roombaDisplacement, pair<double, double> roombaVelocity, double quadVelocity) {
-	double a = square(roombaVelocity.first) + square(roombaVelocity.second) - square(quadVelocity);
-	double b = 2 * (roombaVelocity.first*roombaDisplacement.first + roombaVelocity.second*roombaDisplacement.second);
-	double c = square(roombaDisplacement.first) + square(roombaDisplacement.second);
+double quadParamLineIntersect(vec2d roombaDisplacement, vec2d roombaVelocity, double quadVelocity) {
+	double a = roombaVelocity.square_components() - square(quadVelocity);
+	double b = 2 * roombaVelocity.dot(roombaDisplacement);
+	double c = roombaDisplacement.getMagnitude();
 	return (-b - sqrt(square(b) - (4 * a*c))) / (2 * a); //I feel like this math should not come as a shock to anyone
 }
 
 struct trial {
+	void draw(double time,HDC hdc, RECT * prc);
 	void evaluatetime2(double until);
 	void show(double until, HDC hdc, RECT * prc);
 	void showBestmove(HDC hdc, RECT*prc);
 	priority_queue<pqueue_index> organizer;
 	trial(simulation * sims);
+	~trial();
 	simulation * c_sim;
 	roomba_action * startbots[14];
 	roomba_action * currbots[14];
@@ -262,17 +262,17 @@ public:
 	double rw_v = 0;
 	double lw_v = 0;
 
-	pair<double, double> startpos;
+	vec2d startpos;
 	double initial_angle;
 	int ID;
 
 	void addevent(double at_time, notification type);
 	roomba_action(double at_time, roomba_action * par, state_type type);
-	roomba_action(double s_time, pair<double, double> spos, double init_an, trial * curr_test, int i,bool killbot);
+	roomba_action(double s_time, vec2d spos, double init_an, trial * curr_test, int i,bool killbot);
 	~roomba_action();
 
 	void spawn_state(double at_time, state_type st);
-	pair<double, double> getposition(double at_time);
+	vec2d getposition(double at_time);
 	double getrotation(double at_time);
 	void initNotify();
 };
@@ -286,10 +286,11 @@ public:
 	double startheight; //because why not
 	double end_time;
 	double orientation; //unused currently
-	pair<double, double> startpos;
+	actionval goal_action;
+	vec2d startpos;
 	quad_action * parent;
 	quad_action * child;
-	quad_action::quad_action(double end, pair<double, double> velocity, quad_action * prior, roomba_action * track, quad_state_type t);
+	quad_action::quad_action(double end, vec2d velocity, quad_action * prior, roomba_action * track, quad_state_type t);
 	quad_action::quad_action(trial * tr, simulation * sim);
 	trial * c_test;
 	simulation * c_sim;
@@ -299,7 +300,7 @@ public:
 	bool executeAction(actionval & a,double until);
 	bool flyTo(int roomba,double until);
 	double simpleTimeEst(actionval & a,double time);
-	pair<double, double> getposition(double at_time);
+	vec2d getposition(double at_time);
 	double getheight(double at_time);
 	void spawn_state(double at_time, quad_state_type st);
 	~quad_action();
@@ -309,13 +310,13 @@ struct evaluationFunctor {
 	virtual double operator()(trial * a, double time) {
 		double total = 0;
 		for (int i = 0; i < 10; ++i) {
-			total += a->currbots[i]->getposition(a->currtime).first;
+			total += 10.0-a->currbots[i]->getposition(time).second;
 		}
 		return total;
 	}
 };
 
-quad_action::quad_action(double end, pair<double, double> toward, quad_action * prior, roomba_action * track, quad_state_type st) { //this is NOT consistent with the spawn_state shenanigans I do with roombas. Will rectify.
+quad_action::quad_action(double end, vec2d toward, quad_action * prior, roomba_action * track, quad_state_type st) { //this is NOT consistent with the spawn_state shenanigans I do with roombas. Will rectify.
 	startheight = prior->getheight(prior->end_time);
 	switch (st) {
 		case ASCEND:
@@ -336,13 +337,14 @@ quad_action::quad_action(double end, pair<double, double> toward, quad_action * 
 			delete prior->child;
 		}
 	}
+	goal_action = prior->goal_action;
 	start_time = prior->end_time; //pretty self explanatory
 	end_time = end;
 	prior->child = this;  //we assume prior exists. if it doesn't, we have a problem.
 	parent = prior;
 	startpos = prior->getposition(prior->end_time);
 	//startheight = prior->getheight(prior->end_time);
-	double magnitude = sqrt(toward.first*toward.first + toward.second*toward.second);
+	double magnitude = toward.getMagnitude();
 	if (magnitude > 0.0001) {
 		dx = toward.first / magnitude;
 		dy = toward.second / magnitude;
@@ -373,13 +375,13 @@ quad_action::quad_action(trial * tr, simulation * sim) { //initial constructor
 	tracking = nullptr;
 	mytype = ASCEND;
 	c_test->currquad = this;
-	startpos = make_pair((double)10.0, (double)10.0);
+	startpos = vec2d((double)10.0, (double)10.0);
 }
 
 roomba_action * fetchInterceptState(roomba_action * targ,quad_action * copter,double cap) { //can quad reach this roomba state within time bounds? If not, is there too much time or too little.
 	double dist_to, coverable;
 	do {
-		dist_to = dist(targ->startpos, copter->startpos);
+		dist_to = targ->startpos.dist_to(copter->startpos);
 		coverable = quadSpeedEst * (cap - copter->start_time);
 		if (dist_to >= coverable) {
 			return (targ->child); //return state we're going to run into. could be nullptr
@@ -395,11 +397,11 @@ bool quad_action::executeAction(actionval & a, double until) {
 	switch (a.action) {
 		case TAP:
 			endt = c_test->currquadtime + abs((roombaTapHeight - getheight(c_test->currquadtime)) / quadvSpeedEstInteracting);
-			if (endt > until) {
+			if (endt >= until) {
 				return false;
 			}
 			end_time = c_test->currquadtime;
-			child = new quad_action(endt, make_pair(0, 0), this, c_test->currbots[a.roomba],TAP);
+			child = new quad_action(endt, vec2d(0, 0), this, c_test->currbots[a.roomba],TAP);
 			c_test->currquadtime = endt;
 			if (c_test->currtime < endt) {
 				c_test->evaluatetime(endt); //we wanna know what state we'll be interacting with
@@ -408,11 +410,11 @@ bool quad_action::executeAction(actionval & a, double until) {
 			break;
 		case BUMP:
 			endt = c_test->currquadtime + abs((roombaBumpHeight - getheight(c_test->currquadtime)) / quadvSpeedEstInteracting);
-			if (endt > until) {
+			if (endt >= until) {
 				return false;
 			}
 			end_time = c_test->currquadtime;
-			child = new quad_action(endt, make_pair(0, 0), this, c_test->currbots[a.roomba], BUMP);
+			child = new quad_action(endt, vec2d(0, 0), this, c_test->currbots[a.roomba], BUMP);
 			c_test->currquadtime = endt;
 			if (c_test->currtime < endt) {
 				c_test->evaluatetime(endt); //we wanna know what state we'll be interacting with
@@ -421,11 +423,11 @@ bool quad_action::executeAction(actionval & a, double until) {
 			break;
 		case ASCEND:
 			endt = c_test->currquadtime + abs((cruiseHeight - getheight(c_test->currquadtime)) / quadvSpeedEst);
-			if (endt > until) {
+			if (endt >= until) {
 				return false;
 			}
 			end_time = c_test->currquadtime;
-			child = new quad_action(endt, make_pair(0,0), this, nullptr, ASCEND);
+			child = new quad_action(endt, vec2d(0,0), this, nullptr, ASCEND);
 			c_test->currquadtime = endt;
 			break;
 		default:
@@ -434,12 +436,15 @@ bool quad_action::executeAction(actionval & a, double until) {
 	return true;
 }
 
+//have to revert to get proper state??
+
 bool quad_action::flyTo(int roomba, double until) { //cut time before calculation done
 	double beginTime = c_test->currquadtime;
 	double workingTime = beginTime;
 	roomba_action * istate = c_test->currbots[roomba];
 	double cap = min(c_test->currtime, until);//upper time bound
 	roomba_action * cstate = fetchInterceptState(istate, this, cap);
+	vec2d qcpos = getposition(beginTime);
 	while (cstate == nullptr) {
 		if (c_test->currtime >= until) { //if we've exceeded the max allotted time
 			return false; //cannot be flown to
@@ -448,64 +453,61 @@ bool quad_action::flyTo(int roomba, double until) { //cut time before calculatio
 			c_test->evaluatetime(min(istate->end_time+0.1, until)); 
 			cap = min(c_test->currtime, until);
 		}
-		if (c_test->currtime < until) {
-			cstate = fetchInterceptState(istate, this, cap);
-		}
+		cstate = fetchInterceptState(istate, this, cap);
 	}
 	double errorterm, dist_to, coverable;
 	if (abs(cstate->rw_v - cstate->lw_v) < 1.0e-6) {
-		pair<double, double> velocityvec = make_pair(robotSpeed * cos(cstate->initial_angle), robotSpeed * sin(cstate->initial_angle));
-		workingTime = c_test->currquadtime + quadParamLineIntersect(vec_subtract(vec_add(cstate->startpos, vec_scalarmult(c_test->currquadtime-cstate->start_time,velocityvec)),startpos), velocityvec,quadSpeedEst); //cray math mon
-		dist_to = dist(cstate->getposition(workingTime), startpos);
+		vec2d velocityvec = vec2d(robotSpeed * cos(cstate->initial_angle), robotSpeed * sin(cstate->initial_angle));
+		workingTime = c_test->currquadtime + quadParamLineIntersect(cstate->startpos + ((c_test->currquadtime-cstate->start_time)*velocityvec)-qcpos, velocityvec,quadSpeedEst); //cray math mon
+		dist_to = cstate->getposition(workingTime).dist_to(qcpos);
 		coverable = quadSpeedEst * (workingTime - c_test->currquadtime);
 		errorterm = (abs(dist_to - coverable));
 	}
 	else if (abs(cstate->rw_v + cstate->lw_v) < 1.0e-6) { //spinning in place
-		workingTime = c_test->currquadtime + dist(cstate->startpos, startpos) / quadSpeedEst;
+		workingTime = c_test->currquadtime + cstate->startpos.dist_to(qcpos) / quadSpeedEst;
 	}
 	else{
-		//workingTime = (cstate->end_time - cstate->start_time) / 2;
-		pair<double, double> epos = cstate->getposition(cstate->end_time);
-		pair<double, double> spos = cstate->startpos;
-		pair<double, double> velocityvec = vec_subtract(epos, spos); //get displacement
-		velocityvec = vec_scalarmult(robotSpeed/sqrt(square(velocityvec.first)+square(velocityvec.second)),velocityvec); //convert to velocity
-		workingTime = c_test->currquadtime + quadParamLineIntersect(vec_subtract(vec_add(spos,vec_scalarmult(c_test->currquadtime-cstate->start_time,velocityvec)),startpos),velocityvec, quadSpeedEst); //take approximation from end to end and extend it out to the quadcurrtime, so as to not lose accuracy
-		dist_to = dist(cstate->getposition(workingTime), startpos);
+		vec2d epos = cstate->getposition(cstate->end_time);
+		vec2d spos = cstate->startpos;
+		vec2d velocityvec = (epos, spos); //get displacement
+		velocityvec = (robotSpeed/(velocityvec.getMagnitude())) * velocityvec; //multiply by ratio of velocity to roomba speed
+		workingTime = c_test->currquadtime + quadParamLineIntersect(((spos+((beginTime-cstate->start_time)*velocityvec))-qcpos),velocityvec, quadSpeedEst); //take approximation from end to end and extend it out to the quadcurrtime, so as to not lose accuracy
+		dist_to = cstate->getposition(workingTime).dist_to(qcpos);
 		coverable = quadSpeedEst * (workingTime - beginTime);
 		errorterm = (abs(dist_to - coverable));
-		int i = 0;
+		int i = 0; 
+		//newton's method calculation below, use when not accurate enough
 		while (((abs(dist_to - coverable)) > newton_accuracy) && (i < newton_iterations)) { //todo: make readable with simple methods created earlier in code
 			errorterm = (abs(dist_to - coverable));
-			dist_to = dist(cstate->getposition(workingTime), startpos);
+			dist_to = cstate->getposition(workingTime).dist_to(qcpos);
 			coverable = quadSpeedEst * (workingTime - beginTime);
 			double ang = (cstate->rw_v - cstate->lw_v)*(workingTime - beginTime) / wheelbase_width + cstate->initial_angle;
 			double a = wheelbase_width*(cstate->rw_v + cstate->lw_v) / (2*(cstate->rw_v - cstate->lw_v));
-			double x_t = cstate->startpos.first + a*(sin(ang) - sin(cstate->initial_angle));
-			double y_t = cstate->startpos.second - a*(cos(ang) - cos(cstate->initial_angle));
-			double x_prime = ((cstate->rw_v + cstate->lw_v) / 2)*cos(ang);
-			double y_prime = ((cstate->rw_v + cstate->lw_v) / 2)*sin(ang);
-			double func = (startpos.first - x_t)*(startpos.first - x_t) + (startpos.second - y_t) * (startpos.second - y_t) - (quadSpeedEst*(workingTime-beginTime))*(quadSpeedEst*(workingTime-beginTime));
-			double prime = -2 * (startpos.first - x_t)*x_prime - 2 * (startpos.second - y_t)*y_prime - 2 * quadSpeedEst*quadSpeedEst*(workingTime-beginTime);
-			workingTime = workingTime - func / prime;
+			vec2d p_t = cstate->startpos + a*vec2d(sin(ang) - sin(cstate->initial_angle), cos(ang) - cos(cstate->initial_angle));
+			vec2d prime = ((cstate->rw_v + cstate->lw_v) / 2) * vec2d(ang);
+			double func = (qcpos-p_t).square_components() - square(quadSpeedEst*(workingTime-beginTime));
+			double prime_term = -2 * ((qcpos - p_t).dot(prime)+ quadSpeedEst*quadSpeedEst*(workingTime-beginTime));
+			workingTime = workingTime - func / prime_term;
 			++i;
 		}
 		errorterm = (abs(dist_to - coverable));
-		if (workingTime > until) {
-			return false;
-		}
 	}
-	pair<double, double> endpos = cstate->getposition(workingTime);
+	if (workingTime >= until) {
+		return false;
+	}
+	vec2d endpos = cstate->getposition(workingTime);
 	end_time = beginTime; //spooky
-	child = new quad_action(workingTime,vec_subtract(endpos,startpos),this,nullptr,FLY);
+	child = new quad_action(workingTime,endpos-qcpos,this,nullptr,FLY);
 	c_test->currquadtime = workingTime; //just skip to end
+	//errorterm = (abs(dist(vec_subtract(child->getposition(workingTime), cstate->getposition(workingTime)),vec2d(0.0,0.0)))); //true error term
 	return true;
 }
 
 double quad_action::simpleTimeEst(actionval & a, double time) {
-	return dist(c_test->currbots[a.roomba]->getposition(time), getposition(time));
+	return c_test->currbots[a.roomba]->getposition(time).dist_to(getposition(time));
 }
 
-pair<double, double> quad_action::getposition(double at_time) {
+vec2d quad_action::getposition(double at_time) {
 	if (start_time > at_time) { //make it work universally
 		return parent->getposition(at_time);
 	}
@@ -514,12 +516,12 @@ pair<double, double> quad_action::getposition(double at_time) {
 	}
 	//simplistic code for rn
 	if (tracking != nullptr) { //this assumes we can perfectly follow a roomba, which isn't too much of a stretch
-		pair<double, double> translate = vec_subtract(tracking->getposition(at_time), tracking->getposition(start_time));
-		return vec_add(startpos,translate); //add displacement of roomba over interval to position at start
+		vec2d translate = (tracking->getposition(at_time) - tracking->getposition(start_time));
+		return startpos,translate; //add displacement of roomba over interval to position at start
 	}
 	else {
-		pair<double,double> translate = vec_scalarmult(quadSpeedEst*(at_time - start_time), make_pair(dx, dy));
-		return vec_add(startpos,translate); //add displacement due to velocity to position at start
+		vec2d translate = (quadSpeedEst*(at_time - start_time) * vec2d(dx, dy));
+		return startpos+translate; //add displacement due to velocity to position at start
 	}
 }
 
@@ -544,7 +546,8 @@ public:
 
 
 vector<actionval> * trial::getActions(double time) {
-	vector<actionval> * a = new vector<actionval>(c_sim->actions);
+	vector<actionval> * a = new vector<actionval>(c_sim->actions.begin(),c_sim->actions.end());
+	//sorts it
 	//auto comp = [&](actionval & a, actionval & b) {
 	//	return (currquad->simpleTimeEst(a,time) < currquad->simpleTimeEst(b,time));
 	//};
@@ -558,7 +561,9 @@ vector<actionval> * trial::getActions(double time) {
 vector<actionval> * trial::bestMove(evaluationFunctor & a,double until,actionval * lastMove) {
 	vector<actionval> * act = getActions(currquadtime); //quadtime is needed to sort
 	bool ascent;
-	quad_action * quad_state_before = currquad;
+	double time_before,time_before_init,quad_time_before, quad_time_init = currquadtime;
+	quad_action * quad_state_before, * quad_state_init = currquad;
+
 	if (lastMove != nullptr) {
 		/*if (it.roomba == lastMove->roomba) {            !!!!!!!!!!!!!!!!!!
 		//do something efficient
@@ -571,22 +576,26 @@ vector<actionval> * trial::bestMove(evaluationFunctor & a,double until,actionval
 	else {
 		ascent = true;
 	}
-	roomba_action * priorstates[14];
+	roomba_action * priorstates[14]; //it is apparent now why the "not having to redo everything" optimization is not doing anything for us
+	time_before = currtime;
+	for (int i = 0; i < 14; ++i) {
+		priorstates[i] = currbots[i];
+	}
 	for (auto && it : (*act)) {
-		double quad_time_before = currquadtime;
+		quad_time_before = currquadtime;
+		quad_state_before = currquad;
 		bool worked = ascent;
 		if (worked) {
-			worked = currquad->flyTo(it.roomba, until); //similair to evaluatetime except keeps going till quad gets to the end
+			worked = currquad->flyTo(it.roomba, until); //similar to evaluatetime except keeps going till quad gets to the end?
 		}
-
-		//debug code
-		for (int i = 0; i < 14; ++i) { 
-			priorstates[i] = currbots[i];
-		}
-		//just a test yo
-
-		double time_before = currtime; //time before aerial robot actually makes any changes to the model
-		roomba_action * state_before = currbots[it.roomba]; //save current state of roomba we're about to mess with
+		//time_before = currtime; //time before aerial robot actually makes any changes to the model
+		//for (int i = 0; i < 14; ++i) {
+		//	priorstates[i] = currbots[i]; for when we get event based code
+		//}
+		//time_before = currtime; //time before aerial robot actually makes any changes to the model
+		//for (int i = 0; i < 14; ++i) {
+			//priorstates[i] = currbots[i];
+		//}
 		if (worked) { //if we were able to fly to it
 			worked = currquad->executeAction(it, until);
 		}
@@ -596,7 +605,8 @@ vector<actionval> * trial::bestMove(evaluationFunctor & a,double until,actionval
 			delete ret;
 		}
 		else {
-			it.score = a(this, until);
+			//evaluatetime(currtime+5); //temporary. do something like this where you look at the result your move will have
+			it.score = a(this, currbots[it.roomba]->end_time); //make a "stupid" prediction of the future
 		}
 		//if (state_before->child) {
 			//delete state_before->child; //eliminate any trace of the action happening
@@ -605,12 +615,11 @@ vector<actionval> * trial::bestMove(evaluationFunctor & a,double until,actionval
 		if (quad_state_before->child) {
 			delete quad_state_before->child; //eliminate any trace of the action happening
 			currquad = quad_state_before;
+			currquad->child = nullptr;
 		}
 		currquadtime = quad_time_before;
 		//reverttime(time_before);
-		while (!organizer.empty()) {
-			organizer.pop();
-		}
+		organizer = priority_queue<pqueue_index>();
 		currtime = time_before; //taking a different approach to reverts
 		for (int i = 0; i < 14; ++i) {
 			currbots[i] = priorstates[i];
@@ -621,9 +630,13 @@ vector<actionval> * trial::bestMove(evaluationFunctor & a,double until,actionval
 			currbots[i]->initNotify();
 		}
 		collision_handle();
-		evaluatetime(currtime+0.001); //because why not
-		currtime -= 0.001;
 	}
+	if (quad_state_init->child) {
+		delete quad_state_init->child; //eliminate any trace of the action happening
+		currquad = quad_state_init;
+		currquad->child = nullptr;
+	}
+	currquadtime = quad_time_init;
 	return act;
 }
 
@@ -723,31 +736,6 @@ void HSVtoRGB(double *r, double *g, double *b, double h, double s, double v) {
 	}
 }
 
-/*void draw(pair<double, double> in, HDC hdc, RECT* prc) {
-	HDC hdcBuffer = CreateCompatibleDC(hdc);
-	HBITMAP hbmBuffer = CreateCompatibleBitmap(hdc, prc->right, prc->bottom);
-	HBITMAP hbmOldBuffer = (HBITMAP)SelectObject(hdcBuffer, hbmBuffer);
-
-	HDC hdcMem = CreateCompatibleDC(hdc);
-	HBITMAP hbmOld = (HBITMAP)SelectObject(hdcMem, g_hbmMask);
-
-	FillRect(hdcBuffer, prc, (HBRUSH)GetStockObject(WHITE_BRUSH));
-
-	//BitBlt(hdcBuffer, g_ballInfo.x, g_ballInfo.y, g_ballInfo.width, g_ballInfo.height, hdcMem, 0, 0, SRCAND);
-	//Ellipse(hdcBuffer, (int)40 * (in.first - roombaDiameter / 2), (int)40 * (in.second - roombaDiameter / 2), (int)40 * (in.first + roombaDiameter / 2), (int)40 * in.second + roombaDiameter / 2);
-	//SelectObject(hdcMem, g_hbmBall);
-	//BitBlEt(hdcBuffer, g_ballInfo.x, g_ballInfo.y, g_ballInfo.width, g_ballInfo.height, hdcMem, 0, 0, SRCPAINT);
-
-	//BitBlt(hdc, 0, 0, prc->right, prc->bottom, hdcBuffer, 0, 0, SRCCOPY); //writes
-
-	//SelectObject(hdcMem, hbmOld);
-	//DeleteDC(hdcMem);
-
-	//SelectObject(hdcBuffer, hbmOldBuffer);
-	//DeleteDC(hdcBuffer);
-	//DeleteObject(hbmBuffer);
-}*/
-
 void trial::reverttime(double until) {
 	while (!organizer.empty()) {
 		organizer.pop();
@@ -766,7 +754,7 @@ void trial::reverttime(double until) {
 	}
 }
 
-void trial::evaluatetime2(double until) {
+void trial::evaluatetime2(double until) { //actual evaluatetime method
 	//cout << "Blah" << endl;
 	//if (!organizer.empty()) {	//int a = 0;
 	double interval = ((double)15 / (double)1000);
@@ -777,7 +765,6 @@ void trial::evaluatetime2(double until) {
 		else {
 			currtime = until;
 		}
-
 		collision_handle();
 		while (!organizer.empty()) {
 			pqueue_index first = organizer.top();
@@ -798,83 +785,91 @@ void trial::evaluatetime2(double until) {
 	}
 }
 
+void trial::draw(double time, HDC hdc, RECT * prc) {
+	HDC hdcBuffer = CreateCompatibleDC(hdc);
+	HBITMAP hbmBuffer = CreateCompatibleBitmap(hdc, prc->right, prc->bottom);
+	FillRect(hdcBuffer, prc, (HBRUSH)GetStockObject(WHITE_BRUSH));
+	int savedDC = SaveDC(hdcBuffer);
+	SelectObject(hdcBuffer, hbmBuffer);
+	for (int i = 0; i < 14; i++) {
+		SelectObject(hdcBuffer, GetStockObject(DC_BRUSH));
+		SetDCBrushColor(hdcBuffer, RGB(255, 0, 0));
+		SelectObject(hdcBuffer, GetStockObject(DC_PEN));
+		SetDCPenColor(hdcBuffer, RGB(0, 0, 0));
+		//vec2d st = currbots[i]->getposition(currtime-interval);
+		double red = 0, green = 0, blue = 0;
+		HSVtoRGB(&red, &green, &blue, (double)300 * (double)i / (double)13, 1, 0.8);
+		SetDCBrushColor(hdcBuffer, RGB(red*(double)255, green*(double)255, blue*(double)255));
+		//MoveToEx(hdc, (int)40*st.first, (int)40*st.second, NULL);
+		//LineTo(hdc, (int)40*ed.first, (int)40*ed.second);
+		vec2d ed = currbots[i]->getposition(currtime);
+		vec2d top = 40 * (ed - vec2d(roombaDiameter / 2, roombaDiameter / 2));
+		vec2d bottom = 40 * (ed + vec2d(roombaDiameter / 2, roombaDiameter / 2));
+		Ellipse(hdcBuffer, top.first, top.second, bottom.first, bottom.second);
+
+	}
+	//aerial robot render code
+	SelectObject(hdcBuffer, GetStockObject(DC_BRUSH));
+	SetDCBrushColor(hdcBuffer, RGB(255, 255, 255));
+	SelectObject(hdcBuffer, GetStockObject(DC_PEN));
+	SetDCPenColor(hdcBuffer, RGB(255, 255, 255));
+	//vec2d st = currbots[i]->getposition(currtime-interval);
+	SetDCBrushColor(hdcBuffer, RGB(255, 255, 255));
+	//MoveToEx(hdc, (int)40*st.first, (int)40*st.second, NULL);
+	//LineTo(hdc, (int)40*ed.first, (int)40*ed.second);
+	vec2d ed = currquad->getposition(currtime);
+	vec2d top = 40 * (ed - vec2d(roombaDiameter / 4, roombaDiameter / 4));
+	vec2d bottom = 40 * (ed + vec2d(roombaDiameter / 4, roombaDiameter / 4));
+	Ellipse(hdcBuffer, top.first, top.second, bottom.first, bottom.second);
+	BitBlt(hdc, 0, 0, prc->right, prc->bottom, hdcBuffer, 0, 0, SRCCOPY); //writes
+	RestoreDC(hdcBuffer, savedDC);
+	DeleteDC(hdcBuffer);
+	DeleteObject(hbmBuffer);
+}
 
 
 void trial::evaluatetime(double until) { //use this method to show things on the sketchy renderer.
+	if (!bestmove_test) {
+		return evaluatetime2(until);
+	}
 	double interval = (double)15.0 / (double)1000.0;
 	while (currtime < until) {
 		evaluatetime2(currtime + interval);
-		HDC hdcBuffer = CreateCompatibleDC(hd);
-		HBITMAP hbmBuffer = CreateCompatibleBitmap(hd, re->right, re->bottom);
-		FillRect(hdcBuffer, re, (HBRUSH)GetStockObject(WHITE_BRUSH));
-		int savedDC = SaveDC(hdcBuffer);
-		SelectObject(hdcBuffer, hbmBuffer);
-		//aerial robot render code
-		SelectObject(hdcBuffer, GetStockObject(DC_BRUSH));
-		SetDCBrushColor(hdcBuffer, RGB(255, 255, 255));
-		SelectObject(hdcBuffer, GetStockObject(DC_PEN));
-		SetDCPenColor(hdcBuffer, RGB(255, 255, 255));
-		//pair<double,double> st = currbots[i]->getposition(currtime-interval);
-		pair<double, double> ed = currquad->getposition(currtime);
-		SetDCBrushColor(hdcBuffer, RGB(255, 255, 255));
-		//MoveToEx(hdc, (int)40*st.first, (int)40*st.second, NULL);
-		//LineTo(hdc, (int)40*ed.first, (int)40*ed.second);
-		Ellipse(hdcBuffer, (int)40 * (ed.first - roombaDiameter / 4), (int)40 * (ed.second - roombaDiameter / 4), (int)40 * (ed.first + roombaDiameter / 4), (int)40 * (ed.second + roombaDiameter / 4));
-
-		for (int i = 0; i < 14; i++) {
-			SelectObject(hdcBuffer, GetStockObject(DC_BRUSH));
-			SetDCBrushColor(hdcBuffer, RGB(255, 0, 0));
-			SelectObject(hdcBuffer, GetStockObject(DC_PEN));
-			SetDCPenColor(hdcBuffer, RGB(0, 0, 0));
-			//pair<double,double> st = currbots[i]->getposition(currtime-interval);
-			pair<double, double> ed = currbots[i]->getposition(currtime);
-			double red = 0, green = 0, blue = 0;
-			double aaa = (until - currtime) / until;
-			HSVtoRGB(&red, &green, &blue, (double)300 * (double)i / (double)13, 1, 0.8);
-			SetDCBrushColor(hdcBuffer, RGB(red*(double)255, green*(double)255, blue*(double)255));
-			//MoveToEx(hdc, (int)40*st.first, (int)40*st.second, NULL);
-			//LineTo(hdc, (int)40*ed.first, (int)40*ed.second);
-
-			Ellipse(hdcBuffer, (int)40 * (ed.first - roombaDiameter / 2), (int)40 * (ed.second - roombaDiameter / 2), (int)40 * (ed.first + roombaDiameter / 2), (int)40 * (ed.second + roombaDiameter / 2));
-
-		}
-		BitBlt(hd, 0, 0, re->right, re->bottom, hdcBuffer, 0, 0, SRCCOPY); //writes
-		RestoreDC(hdcBuffer, savedDC);
-		DeleteDC(hdcBuffer);
-		DeleteObject(hbmBuffer);
+		draw(currtime, hd, re);
 	}
 }
 
 void trial::show(double until,HDC hdc, RECT * prc) { //use this method to show things on the sketchy renderer.
 	double interval = (double)15.0 / (double)1000.0;
 	while (currtime < until) {
-		evaluatetime(currtime + interval);
-		HDC hdcBuffer = CreateCompatibleDC(hdc);
-		HBITMAP hbmBuffer = CreateCompatibleBitmap(hdc, prc->right, prc->bottom);
-		FillRect(hdcBuffer, prc, (HBRUSH)GetStockObject(WHITE_BRUSH));
-		int savedDC = SaveDC(hdcBuffer);
-		SelectObject(hdcBuffer, hbmBuffer);
-		for (int i = 0; i < 14; i++) {
-			SelectObject(hdcBuffer, GetStockObject(DC_BRUSH));
-			SetDCBrushColor(hdcBuffer, RGB(255, 0, 0));
-			SelectObject(hdcBuffer, GetStockObject(DC_PEN));
-			SetDCPenColor(hdcBuffer, RGB(0, 0, 0));
-			//pair<double,double> st = currbots[i]->getposition(currtime-interval);
-			pair<double, double> ed = currbots[i]->getposition(currtime);
-			double red = 0, green = 0, blue = 0;
-			double aaa = (until - currtime) / until;
-			HSVtoRGB(&red, &green, &blue, (double)300 * (double)i / (double)13, 1, 0.8);
-			SetDCBrushColor(hdcBuffer, RGB(red*(double)255, green*(double)255, blue*(double)255));
-			//MoveToEx(hdc, (int)40*st.first, (int)40*st.second, NULL);
-			//LineTo(hdc, (int)40*ed.first, (int)40*ed.second);
-
-			Ellipse(hdcBuffer, (int)40 * (ed.first - roombaDiameter / 2), (int)40 * (ed.second - roombaDiameter / 2), (int)40 * (ed.first + roombaDiameter / 2), (int)40 * (ed.second + roombaDiameter / 2));
-
-		}
-		BitBlt(hdc, 0, 0, prc->right, prc->bottom, hdcBuffer, 0, 0, SRCCOPY); //writes
-		RestoreDC(hdcBuffer, savedDC);
-		DeleteDC(hdcBuffer);
-		DeleteObject(hbmBuffer);
+		evaluatetime(currtime+interval);
+		draw(currtime, hdc, prc);
+		/*if ((currtime + interval) >= currquad->end_time) { //this block of code is very temporary and incredibly jury-rigged.
+			if (currquad->mytype == ASCEND) {
+				evaluationFunctor a;
+				roomba_action * priorstates[14]; //it is apparent now why the not having to redo everything optimization is not doing anything for us
+				double priortime = currtime;
+				for (int i = 0; i < 14; ++i) {
+					priorstates[i] = currbots[i];
+				}
+				//vector<actionval> * ret = bestMove(a, currtime+predictUntil, nullptr);
+				for (int i = 0; i < 14; ++i) {
+					currbots[i] = priorstates[i];
+					if (currbots[i]->child) {
+						delete currbots[i]->child;
+					}
+				}
+				currquad->goal_action = *(max_element(ret->begin(), ret->end()));
+				delete ret;
+				currquad->flyTo(currquad->goal_action.roomba, runendtime);
+			}
+			else if ((currquad->mytype == TAP) || (currquad->mytype == BUMP)) {
+				currquad->executeAction(actionval(0, ASCEND), runendtime);
+			}
+			else if (currquad->mytype == FLY){
+				currquad->executeAction(currquad->goal_action, runendtime);
+			}
+		}*/
 	}
 }
 
@@ -882,11 +877,8 @@ void trial::showBestmove(HDC hdc, RECT * prc) {
 	hd = hdc;
 	re = prc;
 	evaluationFunctor a;
+	bestmove_test = true;
 	bestMove(a, predictUntil, nullptr);
-}
-
-double simp_dform(pair<double, double> a, pair<double, double> b) { //simple distance
-	return square(a.first - b.first) + square(a.second - b.second);
 }
 
 
@@ -907,9 +899,9 @@ HAVE IT CHECK IF ANYTHING IS ALREADY TOUCHING IT!!!!!!!!!!!!!!!!!!!! (and pass o
 void trial::collision_handle() {
 	for (int i = 0; i < 13; i++) {
 		for (int j = i + 1; j < 14; j++) {
-			pair<double, double> a = currbots[i]->getposition(currtime);
-			pair<double, double> b = currbots[j]->getposition(currtime);
-			if ((pow(roombaDiameter,2))>=simp_dform(a,b)) {
+			vec2d a = currbots[i]->getposition(currtime);
+			vec2d b = currbots[j]->getposition(currtime);
+			if (square(roombaDiameter)>=(a-b).square_components()) {
 				if (fix_angle(atan2(b.second - a.second, b.first - a.first) - currbots[i]->getrotation(currtime) + pi / 2) <= pi) { //if other is in front
 					if ((!clist[i][j]) || (currbots[i]->mytype == RUN) || (currbots[i]->mytype == RANDROT) || (currbots[i]->mytype == TOPTOUCH) || (currbots[i]->mytype == OBSTACLERUN)) {
 						clist[i][j] = true;
@@ -1005,21 +997,31 @@ double roomba_action::getrotation(double at_time) {
 	}
 }
 
-pair<double, double> roomba_action::getposition(double at_time) {
+vec2d roomba_action::getposition(double at_time) {
 	if (start_time > at_time) { //make it work universally
-		return parent->getposition(at_time);;
+		if (parent != nullptr) {
+			return parent->getposition(at_time);
+		}
+		else {
+			at_time = start_time; //make sure we don't overshoot dumb estimates
+		}
 	}
-	if ((child != nullptr) && (child->start_time < at_time)) {
-		return child->getposition(at_time);
+	if (end_time < at_time) {
+		if (child != nullptr) {
+			return child->getposition(at_time);
+		}
+		else {
+			at_time = end_time; //make sure we don't overshoot dumb estimates
+		}
 	}
 	double dt = at_time - start_time;
 	if (abs(rw_v - lw_v) < 1.0e-6) {
-		return pair<double, double>(startpos.first + rw_v * dt * cos(initial_angle), startpos.second + rw_v * dt * sin(initial_angle));
+		return startpos + rw_v*dt*vec2d(initial_angle);
 	}
 	else {
-		double R = wheelbase_width * (rw_v * dt + lw_v * dt) / (2 * (rw_v * dt - lw_v * dt)),
+		double R = wheelbase_width * (rw_v + lw_v) / (2 * (rw_v - lw_v)),
 			wd = (rw_v * dt - lw_v * dt) / wheelbase_width;
-		return pair<double, double>(startpos.first + R * sin(wd + initial_angle) - R * sin(initial_angle), startpos.second - R * cos(wd + initial_angle) + R * cos(initial_angle));
+		return startpos + R*vec2d(sin(wd+initial_angle)-sin(initial_angle),cos(initial_angle)-cos(wd+initial_angle));
 	}
 }
 
@@ -1046,7 +1048,7 @@ quad_action::~quad_action() {
 	}
 }
 
-roomba_action::roomba_action(double s_time, pair<double, double> spos, double init_an,trial * curr_test,int i,bool killbot) { //init constructor
+roomba_action::roomba_action(double s_time, vec2d spos, double init_an,trial * curr_test,int i,bool killbot) { //init constructor
 	if (!killbot) {
 		//mytype = RUN;
 		next_noise = noiseInterval;
@@ -1137,7 +1139,7 @@ trial::trial(simulation * sims) {
 	currquadtime = currquad->end_time;
 	for (int i = 0; i < 10; i++) {
 		double ang = fix_angle((2 * pi / 10)*i/* + c_sim->roomba_offset*/);
-		startbots[i] = new roomba_action(0.0, make_pair(10.0 + cos(ang), 10.0 + sin(ang)), ang, this, i, false);
+		startbots[i] = new roomba_action(0.0, vec2d(10.0 + cos(ang), 10.0 + sin(ang)), ang, this, i, false);
 		currbots[i] = startbots[i];
 		currbots[i]->spawn_state(0, RUN);
 		for (int j = 0; j < 14; j++) {
@@ -1146,7 +1148,7 @@ trial::trial(simulation * sims) {
 	}
 	for (int i = 0; i < 4; i++) {
 		double ang = fix_angle((2 * pi / 4)*i/* + c_sim->whack_offset*/);
-		startbots[10+i] = new roomba_action(0.0, make_pair(10.0 + 5.0*cos(ang), 10.0 + 5.0*sin(ang)), fix_angle(ang-pi/2.0), this, i+10.0, true);
+		startbots[10+i] = new roomba_action(0.0, vec2d(10.0 + 5.0*cos(ang), 10.0 + 5.0*sin(ang)), fix_angle(ang-pi/2.0), this, i+10.0, true);
 		currbots[10+i] = startbots[i+10];
 		currbots[10+i]->spawn_state(0, OBSTACLERUN);
 		for (int j = 0; j < 14; j++) {
@@ -1155,8 +1157,15 @@ trial::trial(simulation * sims) {
 	}
 }
 
+trial::~trial() {
+	delete currquad;
+	for (int i = 0; i < 14; ++i) {
+		delete currbots[i];
+	}
+}
+
 void roomba_action::notify(double at_time, pqueue_index info) {
-	if ((start_time <= at_time) && (at_time <= end_time) &&(c_test->currbots[ID] == this)) {
+	if ((start_time <= at_time) && (at_time <= end_time) &&  (c_test->currbots[ID] == this)) {
 		switch (info.type) {
 		case TOUCHED:
 			if (((mytype == RUN) || (mytype == RANDROT) || (mytype == TOPTOUCH))) { //check states to ensure they're legit
@@ -1173,7 +1182,7 @@ void roomba_action::notify(double at_time, pqueue_index info) {
 		case REVERSAL:
 			if (mytype == RUN) {
 				spawn_state(at_time, REVERSE);
-				child->next_reversal = at_time + noiseInterval;  //tricksy
+				child->next_reversal = at_time + reverseInterval;  //tricksy
 			}
 			break;
 		case NOISE:
