@@ -1,0 +1,4 @@
+http://www-prima.imag.fr/jlc/papers/SigProc-Fusion.pdf
+https://www.youtube.com/watch?v=nNWWLJZRxAU
+http://multimechatronics.com/images/uploads/mech_n/Sensor_Fusion.pdf
+
