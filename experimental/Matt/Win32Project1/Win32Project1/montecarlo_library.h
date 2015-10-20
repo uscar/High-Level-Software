@@ -86,7 +86,7 @@ double predictUntil = 15.0; //10s predictive capacity?
 
 
 enum notification { TOUCHED, REVERSAL, NOISE, MAGNET, ENDED,TOUCHENDED,EXITED};
-enum state_type { REVERSE, RUN, RANDROT, TOPTOUCH, STOPPED,OBSTACLERUN,OBSTACLESTOPPED,TOTALSTOP,OUTOFPLAY};
+enum state_type { REVERSE, RUN, RANDROT, TOPTOUCH, STOPPED, OBSTACLERUN, OBSTACLESTOPPED, OUTOFPLAY};
 enum quad_state_type {BUMP, FLY, TAP, ASCEND, HOVER,FLYTHROUGH,ABORT};
 enum quad_notification { ROOMBASPOTTED};
 
@@ -96,6 +96,8 @@ class roomba_action;
 struct pqueue_index;
 struct evaluationFunctor;
 class simulation;
+
+//--------------------------------------------------------Helper functions-------------------------------------------
 
 double fix_angle(double in_angle) {
 	while (in_angle >= 2 * pi) {
@@ -110,6 +112,8 @@ double fix_angle(double in_angle) {
 double square(double a) { //fairly certain pow has a special case for this but if not, doesn't hurt to write something like this
 	return a*a;
 }
+
+//-----------------------------------------------------Helper vector class-------------------------------------------
 
 struct vec2d : pair<double,double>{ //phase out pair<double,double>s in favor of this
 	vec2d(const double &, const double &);
@@ -203,7 +207,9 @@ struct actionval {
 	actionval(double, quad_state_type);
 	actionval();
 };
+
 actionval::actionval(double a, quad_state_type b) : roomba(a),action(b)  {}
+
 actionval::actionval() {
 	action = HOVER;
 	score = 0;
@@ -217,8 +223,11 @@ double quadParamLineIntersect(vec2d roombaDisplacement, vec2d roombaVelocity, do
 	return (-b - sqrt(square(b) - (4 * a*c))) / (2 * a); //I feel like this math should not come as a shock to anyone
 }
 
-struct trial {
-	void draw(double time,HDC hdc, RECT * prc);
+//--------------------------------------------------------------------------------STATE CLASS DECLARATIONS--------------------------------------------------------------------------------
+
+class trial {
+public:
+	void draw(double time, HDC hdc, RECT * prc);
 	void evaluatetime2(double until);
 	void show(double until, HDC hdc, RECT * prc);
 	void showBestmove(HDC hdc, RECT*prc);
@@ -242,7 +251,7 @@ struct trial {
 
 class roomba_action {
 public:
-	void notify(double at_time, pqueue_index type);
+	virtual void notify(double at_time, pqueue_index type);
 	roomba_action * parent = nullptr;
 	roomba_action * child = nullptr;
 
@@ -254,7 +263,7 @@ public:
 	bool is_obstacle = false;
 
 	double start_time;
-	double end_time; 
+	double end_time;
 	double initial_end;
 	trial * c_test;
 	simulation * c_sim;
@@ -264,18 +273,313 @@ public:
 
 	vec2d startpos;
 	double initial_angle;
+
+	vec2d endpos; //to ease calculation
+	double final_angle;
 	int ID;
 
 	void addevent(double at_time, notification type);
 	roomba_action(double at_time, roomba_action * par, state_type type);
-	roomba_action(double s_time, vec2d spos, double init_an, trial * curr_test, int i,bool killbot);
-	~roomba_action();
+	roomba_action(double s_time, vec2d spos, double init_an, trial * curr_test, int i);
+	virtual ~roomba_action();
 
 	void spawn_state(double at_time, state_type st);
 	vec2d getposition(double at_time);
 	double getrotation(double at_time);
-	void initNotify();
+	virtual void state_register();
 };
+
+class roomba_run : public roomba_action {
+public:
+	roomba_run(double at_time, roomba_action * par, state_type type);
+	void state_register();
+	roomba_run(double s_time, vec2d spos, double init_an, trial * curr_test, int i);
+	void notify(double at_time, pqueue_index info);
+};
+
+class roomba_outofplay : public roomba_action {
+public:
+	roomba_outofplay(double at_time, roomba_action * par, state_type type);
+	void state_register();
+	void notify(double at_time, pqueue_index info);
+};
+
+class roomba_toptouch : public roomba_action {
+public:
+	roomba_toptouch(double at_time, roomba_action * par, state_type type);
+	void state_register();
+	void notify(double at_time, pqueue_index info);
+};
+
+
+class roomba_obstaclerun : public roomba_action {
+public:
+	roomba_obstaclerun(double at_time, roomba_action * par, state_type type);
+	void state_register();
+	roomba_obstaclerun(double s_time, vec2d spos, double init_an, trial * curr_test, int i);
+	void notify(double at_time, pqueue_index info);
+};
+
+class roomba_obstaclestopped : public roomba_action {
+public:
+	roomba_obstaclestopped(double at_time, roomba_action * par, state_type type);
+	void state_register();
+	void notify(double at_time, pqueue_index info);
+};
+
+class roomba_stopped : public roomba_action {
+public:
+	roomba_stopped(double at_time, roomba_action * par, state_type type);
+	void state_register();
+	void notify(double at_time, pqueue_index info);
+};
+
+class roomba_reverse : public roomba_action {
+public:
+	roomba_reverse(double at_time, roomba_action * par, state_type type);
+	void state_register();
+	void notify(double at_time, pqueue_index info);
+};
+
+
+class roomba_randrot : public roomba_action {
+public:
+	roomba_randrot(double at_time, roomba_action * par, state_type type);
+	void state_register();
+	void notify(double at_time, pqueue_index info);
+};
+
+//--------------------------------------------------------------STATE CONSTRUCTORS----------------------------------------------------------------------------
+
+
+roomba_action::roomba_action(double s_time, vec2d spos, double init_an, trial * curr_test, int i) { //init constructor
+	c_test = curr_test;
+	c_sim = curr_test->c_sim;
+	parent = nullptr;
+	child = nullptr;
+	startpos = spos;
+	initial_angle = fix_angle(init_an);
+	start_time = s_time;
+	//cout << i;
+	ID = i;
+}
+
+roomba_action::roomba_action(double at_time, roomba_action * par, state_type type) { //standard constructor
+	par->end_time = at_time;
+	if (par->child != nullptr) {
+		delete par->child; //important
+	}
+	par->child = this;
+	par->end_time = at_time;
+	mytype = type;
+	c_test = par->c_test;
+	c_sim = c_test->c_sim;
+	parent = par;
+	child = nullptr;
+	next_noise = par->next_noise;
+	next_reversal = par->next_reversal;
+	startpos = par->getposition(at_time);
+	initial_angle = fix_angle(par->getrotation(at_time));
+	start_time = at_time;
+	ID = par->ID;
+	c_test->currbots[ID] = this;
+}
+
+
+roomba_run::roomba_run(double s_time, vec2d spos, double init_an, trial * curr_test, int i) : roomba_action(s_time,spos,init_an,curr_test,i) {
+	mytype = RUN;
+	is_obstacle = false;
+	rw_v = robotSpeed;
+	lw_v = robotSpeed;
+	next_noise = noiseInterval;
+	next_reversal = reverseInterval;
+	state_register();
+}
+
+roomba_run::roomba_run(double at_time, roomba_action * par, state_type type) : roomba_action(at_time, par, type) {
+	mytype = RUN;
+	is_obstacle = false;
+	rw_v = robotSpeed;
+	lw_v = robotSpeed;
+	state_register();
+}
+
+
+roomba_obstaclerun::roomba_obstaclerun(double s_time, vec2d spos, double init_an, trial * curr_test, int i) : roomba_action(s_time, spos, init_an, curr_test, i) {
+	mytype = OBSTACLERUN;
+	is_obstacle = true;
+	next_noise = runendtime;
+	next_reversal = runendtime;
+	rw_v = robotSpeed - (double)9 / (double)1000;
+	lw_v = robotSpeed + (double)9 / (double)1000;
+	state_register();
+}
+
+roomba_obstaclerun::roomba_obstaclerun(double at_time, roomba_action * par, state_type type) : roomba_action(at_time, par, type) {
+	mytype = OBSTACLERUN;
+	is_obstacle = true;
+	rw_v = robotSpeed - (double)9 / (double)1000;
+	lw_v = robotSpeed + (double)9 / (double)1000;
+	state_register();
+}
+
+roomba_toptouch::roomba_toptouch(double at_time, roomba_action * par, state_type type) : roomba_action(at_time, par, type) {
+	mytype = TOPTOUCH;
+	is_obstacle = false;
+	rw_v = -robotSpeed / 2;
+	lw_v = robotSpeed / 2;
+	state_register();
+}
+
+roomba_reverse::roomba_reverse(double at_time, roomba_action * par, state_type type) : roomba_action(at_time, par, type) {
+	mytype = REVERSE;
+	is_obstacle = false;
+	rw_v = -robotSpeed / 2;
+	lw_v = robotSpeed / 2;
+	state_register();
+}
+
+roomba_randrot::roomba_randrot(double at_time, roomba_action * par, state_type type) : roomba_action(at_time, par, type) {
+	mytype = RANDROT;
+	is_obstacle = false;
+	double randv = rand() % randomMax;
+	randv = randv - randomMax / 2;
+	randv /= (double)1000.00;
+	rw_v = robotSpeed - randv;
+	lw_v = robotSpeed + randv;
+	state_register();
+}
+
+roomba_stopped::roomba_stopped(double at_time, roomba_action * par, state_type type) : roomba_action(at_time, par, type) {
+	mytype = STOPPED;
+	is_obstacle = false;
+	rw_v = 0;
+	lw_v = 0;
+	state_register();
+}
+
+roomba_obstaclestopped::roomba_obstaclestopped(double at_time, roomba_action * par, state_type type) : roomba_action(at_time, par, type) {
+	mytype = STOPPED;
+	is_obstacle = true;
+	rw_v = 0;
+	lw_v = 0;
+	state_register();
+}
+
+//------------------------------------------------------STATE NOTIFICATIONS-------------------------------------------------------------------------
+
+void roomba_run::notify(double at_time, pqueue_index info) {
+	if ((start_time <= at_time) && (at_time <= end_time) && (c_test->currbots[ID] == this)) {
+		switch (info.type) {
+			case TOUCHED:
+				if (((info.linked != nullptr) && (info.linked->end_time >= at_time)) || info.quadhit) {
+					spawn_state(at_time, REVERSE);
+				}
+				break;
+			case REVERSAL:
+				spawn_state(at_time, REVERSE);
+				child->next_reversal = at_time + reverseInterval;
+				break;
+			case NOISE:
+				spawn_state(at_time, RANDROT);
+				child->next_noise = at_time + noiseInterval;
+				break;
+			case MAGNET:
+				spawn_state(at_time, TOPTOUCH);
+				break;
+		}
+	}
+}
+
+void roomba_randrot::notify(double at_time, pqueue_index info) {
+	if ((start_time <= at_time) && (at_time <= end_time) && (c_test->currbots[ID] == this)) {
+		switch (info.type) {
+			case TOUCHED:
+				if (((info.linked != nullptr) && (info.linked->end_time >= at_time)) || info.quadhit) {
+					spawn_state(at_time, REVERSE);
+				}
+				break;
+			case MAGNET:
+				spawn_state(at_time, TOPTOUCH);
+				break;
+			case ENDED:
+				spawn_state(at_time, RUN);
+				break;
+		}
+	}
+}
+
+void roomba_reverse::notify(double at_time, pqueue_index info) { //huh. you can interrupt a reverse with a toptouch. I forgot that was even possible
+	if ((start_time <= at_time) && (at_time <= end_time) && (c_test->currbots[ID] == this)) {
+		switch (info.type) {
+			case MAGNET:
+				spawn_state(at_time, TOPTOUCH);
+				break;
+			case ENDED:
+				spawn_state(at_time, RUN);
+				break;
+		}
+	}
+}
+
+void roomba_obstaclerun::notify(double at_time, pqueue_index info) {
+	if ((start_time <= at_time) && (at_time <= end_time) && (c_test->currbots[ID] == this)) {
+		switch (info.type) {
+			case TOUCHED:
+				if (((info.linked != nullptr) && (info.linked->end_time >= at_time)) || info.quadhit) {
+					spawn_state(at_time, OBSTACLESTOPPED);
+				}
+		}
+	}
+}
+
+
+void roomba_obstaclestopped::notify(double at_time, pqueue_index info) {
+	if ((start_time <= at_time) && (at_time <= end_time) && (c_test->currbots[ID] == this)) {
+		switch (info.type) {
+			case TOUCHENDED:
+				if (((info.linked != nullptr) && (info.linked->end_time >= at_time)) || info.quadhit) {
+					spawn_state(at_time, OBSTACLERUN);
+				}
+		}
+	}
+}
+
+void roomba_toptouch::notify(double at_time, pqueue_index info) {
+	if ((start_time <= at_time) && (at_time <= end_time) && (c_test->currbots[ID] == this)) {
+		switch (info.type) {
+			case TOUCHENDED:
+				if (mytype == OBSTACLESTOPPED) {
+					spawn_state(at_time, OBSTACLERUN);
+				}
+				break;
+			case ENDED:
+				if ((mytype == RANDROT) || (mytype == REVERSE) || (mytype == TOPTOUCH)) {
+					spawn_state(at_time, RUN);
+				}
+				break;
+		}
+	}
+}
+
+void roomba_stopped::notify(double at_time, pqueue_index info) {
+	if ((start_time <= at_time) && (at_time <= end_time) && (c_test->currbots[ID] == this)) {
+		switch (info.type) {
+			//wheeeee
+		}
+	}
+}
+
+
+void roomba_outofplay::notify(double at_time, pqueue_index info) {
+	if ((start_time <= at_time) && (at_time <= end_time) && (c_test->currbots[ID] == this)) {
+		switch (info.type) {
+			//wheeeee
+		}
+	}
+}
+
+void roomba_action::notify(double at_time, pqueue_index info) {} //no default notify code
 
 class quad_action {
 public:
@@ -315,6 +619,7 @@ struct evaluationFunctor {
 		return total;
 	}
 };
+
 
 quad_action::quad_action(double end, vec2d toward, quad_action * prior, roomba_action * track, quad_state_type st) { //this is NOT consistent with the spawn_state shenanigans I do with roombas. Will rectify.
 	startheight = prior->getheight(prior->end_time);
@@ -564,14 +869,14 @@ vector<actionval> * trial::bestMove(evaluationFunctor & a,double until,actionval
 	double time_before,time_before_init,quad_time_before, quad_time_init = currquadtime;
 	quad_action * quad_state_before, * quad_state_init = currquad;
 
-	if (lastMove != nullptr) {
-		/*if (it.roomba == lastMove->roomba) {            !!!!!!!!!!!!!!!!!!
+	if (lastMove != nullptr) { //if we just made a move right before this
+		/*if (it.roomba == lastMove->roomba) {  !!!!!!!!!!!!!!!!!!
 		//do something efficient
 		}
 		else {
 		worked = currquad->executeAction(temp,until);
 		}*/
-		ascent = currquad->executeAction(actionval(0, ASCEND), until);
+		ascent = currquad->executeAction(actionval(0, ASCEND), until); //fly back to standard level
 	}
 	else {
 		ascent = true;
@@ -627,7 +932,7 @@ vector<actionval> * trial::bestMove(evaluationFunctor & a,double until,actionval
 				delete currbots[i]->child;
 				currbots[i]->child = nullptr;
 			}
-			currbots[i]->initNotify();
+			currbots[i]->state_register();
 		}
 		collision_handle();
 	}
@@ -746,7 +1051,7 @@ void trial::reverttime(double until) {
 				currbots[i] = currbots[i]->parent;
 				delete currbots[i]->child;
 			}
-			currbots[i]->initNotify(); //renotify
+			currbots[i]->state_register(); //renotify
 		}
 		currtime = until;
 		evaluatetime(currtime); //why not
@@ -950,41 +1255,65 @@ void roomba_action::addquadevent(double at_time, notification type) {
 	c_test->organizer.push(pqueue_index(this, nullptr, type, at_time,true));
 }
 
-void roomba_action::initNotify() {
-	switch (mytype){
-	case RUN:
-		if ((next_reversal <= next_noise) || (next_reversal <= start_time)) { //reversal takes precedent
-			end_time = max(next_reversal, start_time); //put reversal either now or at the next specified reversal time
-			addevent(end_time, REVERSAL);
-		}
-		else {
-			end_time = max(next_noise, start_time);
-			addevent(end_time, NOISE);
-		}
-		break;
-	case REVERSE:
-		end_time = start_time+reverseLength;
-		addevent(end_time,ENDED);
-		break;
-	case RANDROT: {
-		end_time = start_time+noiseLength;
-		addevent(end_time,ENDED);
-		break;
-	}
-	case TOPTOUCH:
-		end_time = start_time+reverseLength/4;
-		addevent(end_time, ENDED);
-		break;
-	case OBSTACLERUN:
-		end_time = runendtime;
-		break;
-	case OBSTACLESTOPPED:
-		end_time = runendtime;
-		break;
-	default:
-		break;
-	}
+//-------------------------------------------------------------------------------STATE REGISTER CODE-----------------------------------------------------------------
+
+//State registration code basically exists just to register new notifications in the queue whenever a new class is created,
+//and to do any common initialization code that would happen at the END of construction
+
+void roomba_action::state_register() { //generic code for all state registration
+	endpos = getposition(end_time);
+	final_angle = getrotation(end_time);
 }
+
+
+void roomba_run::state_register() {
+	if ((next_reversal <= next_noise) || (next_reversal <= start_time)) { //reversal takes precedent
+		end_time = max(next_reversal, start_time); //put reversal either now or at the next specified reversal time
+		addevent(end_time, REVERSAL);
+	}
+	else {
+		end_time = max(next_noise, start_time);
+		addevent(end_time, NOISE);
+	}
+	roomba_action::state_register();
+}
+
+void roomba_reverse::state_register() {
+	end_time = start_time + reverseLength;
+	addevent(end_time, ENDED);
+	roomba_action::state_register();
+}
+
+void roomba_obstaclerun::state_register() {
+	end_time = runendtime;
+	roomba_action::state_register();
+}
+
+void roomba_randrot::state_register() {
+	end_time = start_time + noiseLength;
+	addevent(end_time, ENDED);
+	roomba_action::state_register();
+}
+
+
+void roomba_obstaclestopped::state_register() {
+	end_time = runendtime;
+	roomba_action::state_register();
+}
+
+void roomba_toptouch::state_register() {
+	end_time = start_time + reverseLength / 4;
+	addevent(end_time, ENDED);
+	roomba_action::state_register();
+}
+
+
+void roomba_stopped::state_register() {
+	end_time = runendtime;
+	roomba_action::state_register();
+}
+
+//---------------------------------------------------------------------------------COMMON UTILITY CODE------------------------------------------
 
 double roomba_action::getrotation(double at_time) {
 	double dt = at_time - start_time;
@@ -1048,88 +1377,29 @@ quad_action::~quad_action() {
 	}
 }
 
-roomba_action::roomba_action(double s_time, vec2d spos, double init_an,trial * curr_test,int i,bool killbot) { //init constructor
-	if (!killbot) {
-		//mytype = RUN;
-		next_noise = noiseInterval;
-		next_reversal = reverseInterval;
-	}
-	else {
-		//mytype = OBSTACLERUN;
-		next_noise = runendtime;
-		next_reversal = runendtime;
-	}
-	mytype = STOPPED;
-	is_obstacle = killbot;
-	c_test = curr_test;
-	c_sim = curr_test->c_sim;
-	parent = nullptr;
-	child = nullptr;
-	startpos = spos;
-	initial_angle = fix_angle(init_an);
-	start_time = s_time;
-	//cout << i;
-	ID = i;
-}
-
-roomba_action::roomba_action(double at_time,roomba_action * par,state_type type) { //standard constructor
-	mytype = type;
-	c_test = par->c_test;
-	c_sim = c_test->c_sim;
-	parent = par;
-	child = nullptr;
-	next_noise = par->next_noise;
-	next_reversal = par->next_reversal;
-	startpos = par->getposition(at_time);
-	initial_angle = fix_angle(par->getrotation(at_time));
-	start_time = at_time;
-	ID = par->ID;
-}
-
-void roomba_action::spawn_state(double at_time,state_type st) {
-	//allows us to do weird stuff starting with a state change back in time and progressing forward, updating the sim as we go. I believe
-	roomba_action * temp;
-	if (child != nullptr) { 
-		delete child; //important
-	}
-	end_time = at_time;
-	temp = new roomba_action(at_time, this, st);
-	child = temp;
-	child->parent = this;
+void roomba_action::spawn_state(double at_time,state_type st) { //spawn_state allows us to create 
 	switch (st){
 		case RUN:
-			child->rw_v = robotSpeed;
-			child->lw_v = robotSpeed;
+			child = new roomba_run(at_time, this, st);
 			break;
 		case REVERSE:
-			child->rw_v = -robotSpeed / 2;
-			child->lw_v = robotSpeed / 2;
+			child = new roomba_reverse(at_time, this, st);
 			break;
-		case RANDROT: {
-			double randv = rand() % randomMax;
-			randv = randv - randomMax / 2;
-			randv /= (double)1000.00;
-			child->rw_v = robotSpeed - randv;
-			child->lw_v = robotSpeed + randv;
-			break;
-		}
-		case TOPTOUCH:
-			child->rw_v = -robotSpeed / 2;
-			child->lw_v = robotSpeed / 2;
+		case RANDROT:
+			child = new roomba_randrot(at_time, this, st);
 			break;
 		case OBSTACLERUN:
-			child->rw_v = robotSpeed - (double)9 / (double)1000;
-			child->lw_v = robotSpeed + (double)9 / (double)1000;
+			child = new roomba_obstaclerun(at_time, this, st);
+			break;
+		case TOPTOUCH:
+			child = new roomba_reverse(at_time, this, st);
 			break;
 		case OBSTACLESTOPPED:
-			child->rw_v = 0;
-			child->lw_v = 0;
+			child = new roomba_obstaclestopped(at_time, this, st);
 			break;
 		default:
 			break;
 	}
-	child->initNotify();
-	c_test->currbots[ID] = temp;
 }
 
 trial::trial(simulation * sims) {
@@ -1139,7 +1409,7 @@ trial::trial(simulation * sims) {
 	currquadtime = currquad->end_time;
 	for (int i = 0; i < 10; i++) {
 		double ang = fix_angle((2 * pi / 10)*i/* + c_sim->roomba_offset*/);
-		startbots[i] = new roomba_action(0.0, vec2d(10.0 + cos(ang), 10.0 + sin(ang)), ang, this, i, false);
+		startbots[i] = new roomba_run(0.0, vec2d(10.0 + cos(ang), 10.0 + sin(ang)), ang, this, i);
 		currbots[i] = startbots[i];
 		currbots[i]->spawn_state(0, RUN);
 		for (int j = 0; j < 14; j++) {
@@ -1148,7 +1418,7 @@ trial::trial(simulation * sims) {
 	}
 	for (int i = 0; i < 4; i++) {
 		double ang = fix_angle((2 * pi / 4)*i/* + c_sim->whack_offset*/);
-		startbots[10+i] = new roomba_action(0.0, vec2d(10.0 + 5.0*cos(ang), 10.0 + 5.0*sin(ang)), fix_angle(ang-pi/2.0), this, i+10.0, true);
+		startbots[10+i] = new roomba_obstaclerun(0.0, vec2d(10.0 + 5.0*cos(ang), 10.0 + 5.0*sin(ang)), fix_angle(ang-pi/2.0), this, i+10.0);
 		currbots[10+i] = startbots[i+10];
 		currbots[10+i]->spawn_state(0, OBSTACLERUN);
 		for (int j = 0; j < 14; j++) {
@@ -1161,53 +1431,5 @@ trial::~trial() {
 	delete currquad;
 	for (int i = 0; i < 14; ++i) {
 		delete currbots[i];
-	}
-}
-
-void roomba_action::notify(double at_time, pqueue_index info) {
-	if ((start_time <= at_time) && (at_time <= end_time) &&  (c_test->currbots[ID] == this)) {
-		switch (info.type) {
-		case TOUCHED:
-			if (((mytype == RUN) || (mytype == RANDROT) || (mytype == TOPTOUCH))) { //check states to ensure they're legit
-				if (((info.linked != nullptr) && (info.linked->end_time >= at_time)) || info.quadhit) {
-					spawn_state(at_time,REVERSE);
-				}
-			}
-			else if ((mytype == OBSTACLERUN) && (info.linked != nullptr)) {
-				if (info.linked->end_time >= at_time) {
-					spawn_state(at_time, OBSTACLESTOPPED);
-				}
-			}
-			break;
-		case REVERSAL:
-			if (mytype == RUN) {
-				spawn_state(at_time, REVERSE);
-				child->next_reversal = at_time + reverseInterval;  //tricksy
-			}
-			break;
-		case NOISE:
-			if (mytype == RUN) {
-				spawn_state(at_time, RANDROT);
-				child->next_noise = at_time + noiseInterval;
-			}
-			break;
-		case MAGNET:
-			if ((mytype == RANDROT) || (mytype == REVERSE) || (mytype == RUN)) { ///
-				spawn_state(at_time, TOPTOUCH);
-			}
-			break;
-		case ENDED:
-			if ((mytype == RANDROT) || (mytype == REVERSE) || (mytype == TOPTOUCH)) {
-				spawn_state(at_time, RUN);
-			}
-			break;
-		case TOUCHENDED:
-			if (mytype == OBSTACLESTOPPED) {
-				spawn_state(at_time, OBSTACLERUN);
-			}
-			break;
-		default:
-			break;
-		}
 	}
 }
