@@ -38,21 +38,18 @@ vec2d getVelocity(robot_state * in,double at_time) {
 //I have no idea what you do here but that while loop scares me
 
 // returns time of collision or -1 if no such time
-bool does_collide(robot_state * r1, robot_state * r2, double epoch, double res = .01) {
+bool does_collide(robot_state * r1, robot_state * r2, double epoch = 5.0, double res = .01) {
     double dt = epoch/2.0;
+	double t_init;
     double t = 0;
-    while (dt > res && t < 0) { //what are these shenanigans
-        s1 = state_at_time(r1, t);
-        s2 = state_at_time(r2, t);
-        int fact = 1;
-        if ((s1.pos - s2.pos).dot(s1.vel - s2.vel) > 0) //make sure this is really gt not lt
-            fact *= -1;
-        t += dt;
+    while (dt > res && t >= 0) { //what are these shenanigans
+		int fact = (r1->getPosition(t) - r2->getPosition(t)).dot(getVelocity(r1, t) - getVelocity(r2, t)) > 0 ? -1 : 1;
+        t += fact * dt;
         dt /= 2;
     }
     if (t < 0 || t >= epoch - res)
         return false;
-    return s1.pos.dist(s2.pos) < RADIUS;
+    return s1.pos.dist(s2.pos) < 2*RADIUS;
 }
 
 // returns the index of the first roomba it collides with or -1 if none. (we actually need all the collisions, but fortunately this is easy to modify)
@@ -66,5 +63,4 @@ int does_collide(int r, robot_state ** others, double epoch) {
     }
     return -1;
 }
-
 
