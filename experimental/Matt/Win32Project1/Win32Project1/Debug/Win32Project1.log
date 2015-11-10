@@ -1,4 +1,4 @@
-﻿Build started 10/19/2015 7:59:51 PM.
+﻿Build started 10/19/2015 9:14:28 PM.
      1>Project "C:\Users\Matt\Documents\High-Level-Software\experimental\Matt\Win32Project1\Win32Project1\Win32Project1.vcxproj" on node 2 (Build target(s)).
      1>ClCompile:
          C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\CL.exe /c /ZI /nologo /W3 /WX- /sdl /Od /Oy- /D WIN32 /D _DEBUG /D _WINDOWS /D _UNICODE /D UNICODE /Gm /EHsc /RTC1 /MDd /GS /Zc:wchar_t /Zc:forScope /Yu"stdafx.h" /Fp"Debug\Win32Project1.pch" /Fo"Debug\\" /Fd"Debug\vc120.pdb" /Gd /TP /analyze- /errorReport:prompt Win32Project1.cpp
@@ -6,22 +6,23 @@
      1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(211): warning C4244: 'initializing' : conversion from 'double' to 'int', possible loss of data
      1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(228): warning C4099: 'trial' : type name first seen using 'struct' now seen using 'class'
                  c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(94) : see declaration of 'trial'
-     1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(570): warning C4060: switch statement contains no 'case' or 'default' labels
-     1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(579): warning C4060: switch statement contains no 'case' or 'default' labels
-     1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(870): warning C4101: 'time_before_init' : unreferenced local variable
-     1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(970): warning C4244: 'initializing' : conversion from 'double' to 'int', possible loss of data
-     1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(973): warning C4244: 'initializing' : conversion from 'double' to 'int', possible loss of data
-     1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(1114): warning C4244: 'argument' : conversion from 'double' to 'int', possible loss of data
-     1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(1129): warning C4244: 'argument' : conversion from 'double' to 'int', possible loss of data
-     1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(1422): warning C4244: 'argument' : conversion from 'double' to 'int', possible loss of data
+     1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(569): warning C4060: switch statement contains no 'case' or 'default' labels
+     1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(578): warning C4060: switch statement contains no 'case' or 'default' labels
+     1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(869): warning C4101: 'time_before_init' : unreferenced local variable
+     1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(969): warning C4244: 'initializing' : conversion from 'double' to 'int', possible loss of data
+     1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(972): warning C4244: 'initializing' : conversion from 'double' to 'int', possible loss of data
+     1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(1113): warning C4244: 'argument' : conversion from 'double' to 'int', possible loss of data
+     1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(1128): warning C4244: 'argument' : conversion from 'double' to 'int', possible loss of data
+     1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\montecarlo_library.h(1421): warning C4244: 'argument' : conversion from 'double' to 'int', possible loss of data
      1>c:\users\matt\documents\high-level-software\experimental\matt\win32project1\win32project1\win32project1.cpp(169): warning C4244: 'argument' : conversion from 'time_t' to 'unsigned int', possible loss of data
        Link:
          C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\link.exe /ERRORREPORT:PROMPT /OUT:"C:\Users\Matt\Documents\High-Level-Software\experimental\Matt\Win32Project1\Debug\Win32Project1.exe" /INCREMENTAL /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"C:\Users\Matt\Documents\High-Level-Software\experimental\Matt\Win32Project1\Debug\Win32Project1.pdb" /SUBSYSTEM:WINDOWS /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"C:\Users\Matt\Documents\High-Level-Software\experimental\Matt\Win32Project1\Debug\Win32Project1.lib" /MACHINE:X86 Debug\Win32Project1.res
          Debug\stdafx.obj
          Debug\Win32Project1.obj
+         LINK : C:\Users\Matt\Documents\High-Level-Software\experimental\Matt\Win32Project1\Debug\Win32Project1.exe not found or not built by the last incremental link; performing full link
          Win32Project1.vcxproj -> C:\Users\Matt\Documents\High-Level-Software\experimental\Matt\Win32Project1\Debug\Win32Project1.exe
      1>Done Building Project "C:\Users\Matt\Documents\High-Level-Software\experimental\Matt\Win32Project1\Win32Project1\Win32Project1.vcxproj" (Build target(s)).
 
 Build succeeded.
 
-Time Elapsed 00:00:03.70
+Time Elapsed 00:00:01.80
