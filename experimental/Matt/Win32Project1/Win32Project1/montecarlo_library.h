@@ -196,7 +196,7 @@ void trial::addQuad(quad_action * bot) {
 	currquad = bot;
 }
 
-class roomba_action : robot_state {
+class roomba_action : public robot_state {
 public:
 	virtual void notify(double at_time, pqueue_index type);
 	roomba_action * parent = nullptr;
@@ -209,8 +209,6 @@ public:
 	double next_reversal;
 	bool is_obstacle = false;
 
-	double start_time;
-	double end_time;
 	double initial_end;
 	trial * c_test;
 	simulation * c_sim;
@@ -539,14 +537,12 @@ void roomba_outofplay::notify(double at_time, pqueue_index info) {
 
 void roomba_action::notify(double at_time, pqueue_index info) {} //no default notify code
 
-class quad_action : robot_state {
+class quad_action : public robot_state {
 public:
 	double dx;
 	double dy;
 	double dh;
-	double start_time;
 	double startheight; //because why not
-	double end_time;
 	double orientation; //unused currently
 	actionval goal_action;
 	vec2d startpos;

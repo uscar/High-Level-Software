@@ -8,6 +8,8 @@ public:
 		double g=0;
 		double b=0;
 	};
+	double start_time;
+	double end_time;
 	color c;
 	virtual double getHeight(double at_time) = 0;
 	virtual std::string getName() = 0;
