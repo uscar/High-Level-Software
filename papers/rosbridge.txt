@@ -1,0 +1,5 @@
+http://wiki.ros.org/rosbridge_suite
+https://github.com/RobotWebTools/rosbridge_suite/blob/develop/ROSBRIDGE_PROTOCOL.md
+https://github.com/WPI-RAIL/jrosbridge/
+https://tomcat.apache.org/tomcat-7.0-doc/web-socket-howto.html
+
