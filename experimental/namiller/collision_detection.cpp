@@ -36,7 +36,7 @@ bool does_collide(roomba r1, roomba r2, double epoch,double t0 = 0, double res =
         dt /= 2;
     }
     
-    if (t < t0 || t >= epoch - res || s1.pos.dist(s2.pos) > RADIUS)
+    if (t < t0 || t >= epoch - res || s1.pos.dist(s2.pos) > 2*RADIUS)
         return -1;
   
     dt = epoch/2.0; 
@@ -44,7 +44,7 @@ bool does_collide(roomba r1, roomba r2, double epoch,double t0 = 0, double res =
         s1 = state_at_time(r1, t);
         s2 = state_at_time(r2, t);
         int fact = 1;
-        if (s1.pos.dist(s2.pos) < RADIUS)
+        if (s1.pos.dist(s2.pos) < 2*RADIUS)
             fact *= -1;
         t += dt*fact;
         dt /= 2;
