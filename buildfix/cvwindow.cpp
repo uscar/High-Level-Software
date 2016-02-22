@@ -1,8 +1,3 @@
-/**
- * @file Drawing_1.cpp
- * @brief Simple sample code
- */
-
 #include <opencv2/core/core.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -30,7 +25,6 @@ atomic_bool shutdown;
 int x = 0;
 int y = 0;
 void animate() {
-	cout << "Hello World" << endl;
 	Mat ball_image = Mat::zeros(w, w, CV_8UC3);
 	MyFilledCircle(ball_image, Point(x+=5, y+=4));
 	x%=w;
