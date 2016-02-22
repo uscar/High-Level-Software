@@ -17,10 +17,14 @@ using namespace cv;
 using namespace std;
 
 /// Function headers
-void MyEllipse( Mat img, double angle );
-void MyFilledCircle( Mat img, Point center );
-void MyPolygon( Mat img );
-void MyLine( Mat img, Point start, Point end );
+void MyEllipse(Mat img, double angle);
+void MyFilledCircle(Mat img, Point center);
+void MyPolygon(Mat img);
+void MyLine(Mat img, Point start, Point end);
+
+const float pix_per_cm = 1;
+const int width = 1000;
+const int height = 1000;
 
 atomic_bool shutdown;
 int x = 0;
