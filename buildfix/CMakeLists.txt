@@ -1,0 +1,6 @@
+cmake_minimum_required( VERSION 2.8 )
+add_definitions(-std=c++11)
+project( simuviz )
+find_package( OpenCV REQUIRED )
+add_executable( simuviz cvwindow.cpp )
+target_link_libraries( simuviz ${OpenCV_LIBS} -lpthread )
