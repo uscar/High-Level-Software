@@ -7,15 +7,12 @@
 #include <atomic>
 
 #define w 400
-
+#define ROOMBA_WIDTH 10
 using namespace cv;
 using namespace std;
 
 /// Function headers
-void MyEllipse(Mat img, double angle);
-void MyFilledCircle(Mat img, Point center);
-void MyPolygon(Mat img);
-void MyLine(Mat img, Point start, Point end);
+void drawRoomba( Mat img, Point center, Scalar color);
 
 const float pix_per_cm = 1;
 const int width = 1000;
@@ -26,7 +23,7 @@ int x = 0;
 int y = 0;
 void animate() {
 	Mat ball_image = Mat::zeros(w, w, CV_8UC3);
-	MyFilledCircle(ball_image, Point(x+=5, y+=4));
+	drawRoomba(ball_image, Point(x+=5, y+=4), Scalar(0,0,255));
 	x%=w;
 	y%=w;
 	imshow("Bouncing Ball", ball_image);
@@ -49,6 +46,11 @@ void draw_thread(float hz) {
 	}
 }
 
+void init_background(Mat& background) {
+    background = Mat::zeros(width, height, CV_8UC3);
+
+}
+
 int main() {
 	namedWindow("Bouncing Ball");
 	thread draw(draw_thread, 30);
@@ -58,8 +60,6 @@ int main() {
 	return(0);
 }
 
-void MyFilledCircle( Mat img, Point center ) {
-  int thickness = -1;
-  int lineType = 8;
-  circle(img, center, w/32, Scalar( 0, 0, 255 ), thickness, lineType );
+void drawRoomba( Mat img, Point center, Scalar color) {
+    circle(img, center, ROOMBA_WIDTH, color, -1, 8);
 }
