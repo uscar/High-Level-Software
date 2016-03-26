@@ -26,6 +26,8 @@ Visualizer::~Visualizer() {
   shutdown = true;
   draw->join();
   delete draw;
+  cvDestroyWindow(window_name.c_str());
+  background.release();
 }
 
 void Visualizer::animate() {
