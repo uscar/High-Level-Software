@@ -1,0 +1,5 @@
+cmake_minimum_required( VERSION 2.8 )
+add_definitions(-std=c++11)
+add_library( visualizer visualizer.cpp )
+find_package( OpenCV REQUIRED )
+target_link_libraries( visualizer ${OpenCV_LIBS} -lpthread )
