@@ -15,11 +15,6 @@ struct {
     vect2 vel;
 } state;
 
-// should be implemented by someone
-state state_at_time(roomba r, double t) {
-    state s;
-    return s;
-}
 
 // returns time of collision or -1 if no such time
 bool does_collide(roomba r1, roomba r2, double epoch,double t0 = 0, double res = .01) {

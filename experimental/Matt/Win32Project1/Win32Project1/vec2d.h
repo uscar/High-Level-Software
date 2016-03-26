@@ -1,7 +1,10 @@
 #pragma once
 #include <utility>
 #include <cmath>
-struct vec2d : std::pair<double, double> { //phase out pair<double,double>s in favor of this
+
+//TODO: Overhaul with MKL methods
+
+struct vec2d : public std::pair<double, double> { //phase out pair<double,double>s in favor of this
 	vec2d(const double &, const double &);
 	vec2d(const double &); //angle constructor. basically the opposite of atan2
 	vec2d(const std::pair<double, double> &);

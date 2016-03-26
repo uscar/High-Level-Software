@@ -128,8 +128,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	int wmId, wmEvent;
 	PAINTSTRUCT ps;
 	HDC hdc;
+	RECT prc;
 	simulation sim(0);
-	trial tr = trial(&sim);
+	void * stuff[2] = { (void*)hdc, (void*)&prc };
+	renderer rend(stuff);
+	trial tr = trial(&sim,&rend);
 	switch (message)
 	{
 	case WM_COMMAND:
@@ -149,9 +152,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 	case WM_PAINT: 
-		RECT prc;
 		GetWindowRect(hWnd, &prc);
-		
 		hdc = BeginPaint(hWnd, &ps);
 		
 		/*BITMAP 			bitmap;
@@ -170,8 +171,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		//trial tr = trial(nullptr);
 		//tr.show(600,hdc,&prc);
 		//tr.showBestmove(hdc, &prc);
-		//tr.show(120.0, hdc, &prc);
-		tr.show(200.0,hdc, &prc);
+		tr.show(120.0, hdc, &prc);
+		//tr.show(200.0,hdc, &prc);
+		//rend.runRenderer();
+
 		EndPaint(hWnd, &ps);
 		break;
 
