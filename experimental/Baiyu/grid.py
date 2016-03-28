@@ -4,11 +4,23 @@ from operator import itemgetter, attrgetter, methodcaller
 from numpy.linalg import inv
 import math
 
-img = cv2.imread('gym.jpg')
+#img_path = raw_input("path to input image: ")
+img = cv2.imread("arena3.JPG")
+img = cv2.resize(img, (1280, 800))
+cv2.imwrite('arena 3.jpg', img)
+hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+lower_white = np.array([0, 0, 180])
+upper_white = np.array([180, 100, 255])
+mask = cv2.inRange(hsv, lower_white, upper_white)
+cross = cv2.bitwise_and(img, img, mask=mask)
+cv2.imshow('img', img)
+cv2.imshow('mask', mask)
+cv2.imshow('cross', cross)
 #img = cv2.resize(img,(60,60))
 img = cv2.medianBlur(img,5)
 gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
 edges = cv2.Canny(gray,50,150,apertureSize = 3)
+cv2.imshow("edge",edges)
 lines = cv2.HoughLines(edges,1,np.pi/180,80)
 good = []
 temp = []
@@ -19,21 +31,68 @@ if lines != None:
   for m,n in lines[0]:
       temp.append((m,n))
 # sort with distance
-  temp.sort(key=lambda elem: elem[0])
-  len = len(temp)
+  temp.sort(key=lambda elem: elem[1])
+  lens = len(temp)
   goodlen = 0
+  anglethres = 0.4
+  prevangle = temp[0][1]
 # delete multiple overlapping lines
-  for x in range(0,len):
-    if x != len-1:
-      if abs(temp[x+1][0]-temp[x][0]) > 0.05*width:
+  
+  cluster = [temp[0]]
+  distancethres = 100
+  for x in range(1, len(temp)):
+    if (temp[x][1] - prevangle > anglethres):
+      if len(cluster) > 0:
+        cluster.sort(key=lambda elem: elem[0])
+        print cluster
+        prevdist= cluster[0][0]
+        previndex = 0
+        for y in xrange(1, len(cluster)):
+          if cluster[y][0] - prevdist > distancethres:
+            index = int((y-1-previndex)/2)+previndex
+            print cluster[index][0], cluster[index][1]
+            good.append([cluster[index][0], cluster[index][1]])
+            goodlen += 1
+            prevdist = cluster[y][0]
+            previndex = y
+        index = int((len(cluster)-1-previndex)/2)+previndex
+        print cluster[index][0], cluster[index][1]
+        good.append([cluster[index][0], cluster[index][1]])
+        goodlen += 1
+      prevangle = temp[x][1]
+      cluster = []
+    else:
+      cluster.append(temp[x])  
+  if len(cluster) > 0:
+      cluster.sort(key=lambda elem: elem[0])
+      print cluster
+      prevdist= cluster[0][0]
+      previndex = 0
+      for y in xrange(1, len(cluster)):
+        if cluster[y][0] - prevdist > distancethres:
+          index = int((y-1-previndex)/2)+previndex
+          print cluster[index][0], cluster[index][1]
+          good.append([cluster[index][0], cluster[index][1]])
+          goodlen += 1
+          prevdist = cluster[y][0]
+          previndex = y
+      index = int((len(cluster)-1-previndex)/2)+previndex
+      print cluster[index][0], cluster[index][1]
+      good.append([cluster[index][0], cluster[index][1]])
+      goodlen += 1
+  """
+  for x in range(0,len(temp)):
+    if x != lens-1:
+      if abs(temp[x+1][0]-temp[x][0]) > 0.1*width:
             good.append([temp[x][0],temp[x][1]])
             goodlen = goodlen + 1
-      elif abs(temp[x+1][1]-temp[x][1]) > 0.35:
+      elif abs(temp[x+1][1]-temp[x][1]) > 0.5:
             good.append([temp[x][0],temp[x][1]])
             goodlen = goodlen + 1
-    elif abs(temp[x-1][0]-temp[x][0]) < 0.05*width:
+    elif abs(temp[x-1][0]-temp[x][0]) < 0.1*width:
           good.append([temp[x][0],temp[x][1]])
           goodlen = goodlen + 1
+  """
 #calculate angle
   #print goodlen
 
@@ -71,5 +130,6 @@ if lines != None:
         cv2.line(img,(x1,y1),(x2,y2),(0,0,255),2)
 
 cv2.imshow('grid',img)
+cv2.imwrite('arena 3 grid.jpg', img)
 cv2.waitKey(0)
 cv2.destroyAllWindows()
