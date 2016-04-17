@@ -4,8 +4,12 @@ from operator import itemgetter, attrgetter, methodcaller
 from numpy.linalg import inv
 import math
 
-#img_path = raw_input("path to input image: ")
-img = cv2.imread("arena3.JPG")
+#parameters
+minLineLength = 100
+maxGapLength = 21
+#
+#get the image and preprocessing
+img = cv2.imread("arena.jpg")
 img = cv2.resize(img, (1280, 800))
 cv2.imwrite('arena 3.jpg', img)
 hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -17,46 +21,79 @@ cv2.imshow('img', img)
 cv2.imshow('mask', mask)
 cv2.imshow('cross', cross)
 #img = cv2.resize(img,(60,60))
-img = cv2.medianBlur(img,5)
-gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+cross = cv2.medianBlur(cross,5)
+gray = cv2.cvtColor(cross,cv2.COLOR_BGR2GRAY)
 edges = cv2.Canny(gray,50,150,apertureSize = 3)
 cv2.imshow("edge",edges)
-lines = cv2.HoughLines(edges,1,np.pi/180,80)
-good = []
-temp = []
-arr1 = []
-arr2 = []
-hight, width, channel = img.shape
+cv2.imwrite('edgeCross2.jpg',edges)
+lines = cv2.HoughLinesP(edges,1,np.pi/180,80,minLineLength,maxGapLength)
+#lines = cv2.HoughLines(edges,1,np.pi/180,80)
+
+
 if lines != None:
+  temp = []
+  def PointsToPolar(x1,y1,x2,y2):
+      x12Mat = np.matrix([[x1,1],[x2,1]])
+      x12Mat = inv(x12Mat)
+      y12Mat = np.matrix([[y1],[y2]])
+      mbMat = np.dot(x12Mat,y12Mat)
+      m = mbMat[0,0]
+      b = mbMat[1,0]
+      distance = abs(b)/math.sqrt(math.pow(m,2)+1)
+      if(b < 0):#intersect above
+        print distance
+        distance =  distance
+        theta = - np.pi/2 + math.atan(m)
+      else:
+        theta = np.pi/2 + math.atan(m)
+      return theta, distance
+
+  for x1,y1,x2,y2 in lines[0]:
+      cv2.line(img,(x1,y1),(x2,y2),(0,255,0),2)
+      angle,dis = PointsToPolar(x1,y1,x2,y2)
+      temp.append((dis,angle))
+
+
+
+  #directly process if lines is polar
+  good = []
+  #temp = []
+  arr1 = []
+  arr2 = []
+  hight, width, channel = img.shape
+
+
+  '''
   for m,n in lines[0]:
       temp.append((m,n))
+  '''
 # sort with distance
   temp.sort(key=lambda elem: elem[1])
   lens = len(temp)
   goodlen = 0
-  anglethres = 0.4
+  anglethres = 0.3
   prevangle = temp[0][1]
 # delete multiple overlapping lines
   
   cluster = [temp[0]]
-  distancethres = 100
+  distancethres = 30
   for x in range(1, len(temp)):
     if (temp[x][1] - prevangle > anglethres):
       if len(cluster) > 0:
         cluster.sort(key=lambda elem: elem[0])
-        print cluster
+       # print cluster
         prevdist= cluster[0][0]
         previndex = 0
         for y in xrange(1, len(cluster)):
           if cluster[y][0] - prevdist > distancethres:
             index = int((y-1-previndex)/2)+previndex
-            print cluster[index][0], cluster[index][1]
+            #print cluster[index][0], cluster[index][1]
             good.append([cluster[index][0], cluster[index][1]])
             goodlen += 1
             prevdist = cluster[y][0]
             previndex = y
         index = int((len(cluster)-1-previndex)/2)+previndex
-        print cluster[index][0], cluster[index][1]
+        #print cluster[index][0], cluster[index][1]
         good.append([cluster[index][0], cluster[index][1]])
         goodlen += 1
       prevangle = temp[x][1]
@@ -65,41 +102,28 @@ if lines != None:
       cluster.append(temp[x])  
   if len(cluster) > 0:
       cluster.sort(key=lambda elem: elem[0])
-      print cluster
+      #print cluster
       prevdist= cluster[0][0]
       previndex = 0
       for y in xrange(1, len(cluster)):
         if cluster[y][0] - prevdist > distancethres:
           index = int((y-1-previndex)/2)+previndex
-          print cluster[index][0], cluster[index][1]
+          #print cluster[index][0], cluster[index][1]
           good.append([cluster[index][0], cluster[index][1]])
           goodlen += 1
           prevdist = cluster[y][0]
           previndex = y
       index = int((len(cluster)-1-previndex)/2)+previndex
-      print cluster[index][0], cluster[index][1]
+      #print cluster[index][0], cluster[index][1]
       good.append([cluster[index][0], cluster[index][1]])
       goodlen += 1
-  """
-  for x in range(0,len(temp)):
-    if x != lens-1:
-      if abs(temp[x+1][0]-temp[x][0]) > 0.1*width:
-            good.append([temp[x][0],temp[x][1]])
-            goodlen = goodlen + 1
-      elif abs(temp[x+1][1]-temp[x][1]) > 0.5:
-            good.append([temp[x][0],temp[x][1]])
-            goodlen = goodlen + 1
-    elif abs(temp[x-1][0]-temp[x][0]) < 0.1*width:
-          good.append([temp[x][0],temp[x][1]])
-          goodlen = goodlen + 1
-  """
-#calculate angle
-  #print goodlen
+
+  #calculate angle
+  print goodlen
 
   for x in range(0,goodlen):
-    for y in range(x,goodlen):
+    for y in range(x+1,goodlen):
         if abs(good[x][1]-good[y][1])>0.7 and abs(good[x][1]-good[y][1])<0.9:
-            
               A = good[x]
               B = good[y]
 
@@ -110,12 +134,12 @@ if lines != None:
         dis = dis.transpose()
         result = np.dot(mat,dis)
         return result
-        
+  '''   
   if A is not None:
     intesec = intersect(A,B)
     print intesec[0,0]
     cv2.circle(img,(int(intesec[0,0]),-int(intesec[1,0])),10,255,-1)
-    
+  '''
   #print good
   for rho,theta in good:
         a = np.cos(theta)
